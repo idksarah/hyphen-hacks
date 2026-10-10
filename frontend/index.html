@@ -3,39 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Safe-Light Constellations</title>
+  <title>Asterism — safer night walks</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="map"></div>
+  <div id="map" role="application" aria-label="Map of San Francisco streetlights. Click to set a start point, then a destination."></div>
 
-  <div id="card">
-    <h1>Safe-Light Constellations</h1>
-    <p id="lamp-count">Loading lamps…</p>
-    <label class="toggle">
-      <input id="outages" type="checkbox" checked>
-      Avoid reported outages
-    </label>
-    <p id="status" aria-live="polite"></p>
+  <aside id="panel" aria-label="Plan a walk">
+    <div class="section">
+      <header class="brand">
+        <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+          <defs><linearGradient id="lg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#ff8fc3"/><stop offset=".5" stop-color="#ffa255"/><stop offset="1" stop-color="#8ccaff"/></linearGradient></defs>
+          <path d="M4 22 L11 13 L17 16 L24 5" fill="none" stroke="url(#lg)" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="4" cy="22" r="2.2" fill="#ff8fc3"/><circle cx="11" cy="13" r="1.8" fill="#ffa255"/><circle cx="17" cy="16" r="1.8" fill="#7fe3bf"/>
+          <path d="M24 0.5C24.5 4 25.5 5 28 5.2C25.5 5.5 24.5 6.5 24 10C23.5 6.5 22.5 5.5 20 5.2C22.5 5 23.5 4 24 0.5Z" fill="#fff8ee"/>
+        </svg>
+        <span class="wordmark">Asterism</span>
+      </header>
 
-    <div id="stats" hidden>
-      <table>
-        <thead>
-          <tr><th></th><th class="col-lit">Lit route</th><th class="col-shortest">Shortest</th></tr>
-        </thead>
-        <tbody>
-          <tr><th>Time</th><td data-route="lit" data-stat="minutes"></td><td data-route="shortest" data-stat="minutes"></td></tr>
-          <tr><th>Distance</th><td data-route="lit" data-stat="length"></td><td data-route="shortest" data-stat="length"></td></tr>
-          <tr><th>Lit</th><td data-route="lit" data-stat="lit"></td><td data-route="shortest" data-stat="lit"></td></tr>
-          <tr><th>Longest dark gap</th><td data-route="lit" data-stat="gap"></td><td data-route="shortest" data-stat="gap"></td></tr>
-        </tbody>
-      </table>
-      <ul id="notes"></ul>
+      <h1>Find the route that <em>shines brightest.</em></h1>
     </div>
 
-    <button id="reset" type="button" hidden>Clear points</button>
-  </div>
+    <div class="section">
+      <div class="fields">
+        <div class="field">
+          <span class="pin pin-from-swatch"></span>
+          <span class="field-value" id="from-value">Where from?</span>
+        </div>
+        <div class="field">
+          <span class="pin pin-to-swatch"></span>
+          <span class="field-value" id="to-value">Where to?</span>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <span>Fastest</span>
+        <input type="range" id="alpha" min="0" max="100" value="30" aria-label="Weighting between speed and light">
+        <span>Brightest</span>
+      </div>
+
+      <label class="check"><input type="checkbox" id="outages" checked> Avoid broken lights</label>
+    </div>
+
+    <p id="status" class="section" aria-live="polite"></p>
+
+    <div id="routes" hidden>
+      <button type="button" class="route-card" data-route="lit" aria-pressed="true" style="--rc: var(--butter)">
+        <span class="rc-top"><span class="rc-name">Brightest</span><span class="rc-time" data-stat="minutes"></span></span>
+        <span class="rc-tag" data-stat="tag"></span>
+        <span class="track"><span class="fill" data-stat="lit-bar"></span></span>
+      </button>
+      <button type="button" class="route-card" data-route="shortest" aria-pressed="false" style="--rc: var(--lilac)">
+        <span class="rc-top"><span class="rc-name">Shortest</span><span class="rc-time" data-stat="minutes"></span></span>
+        <span class="rc-tag" data-stat="tag"></span>
+        <span class="track"><span class="fill" data-stat="lit-bar"></span></span>
+      </button>
+      <div class="route-footer">
+        <p id="note" class="route-note"></p>
+        <button id="reset" type="button" class="link">Start over</button>
+      </div>
+    </div>
+  </aside>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="app.js"></script>

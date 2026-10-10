@@ -1,4 +1,5 @@
-// Safe-Light Constellations frontend. See docs/CONTRACTS.md for data shapes.
+// Asterism (Safe-Light Constellations) frontend. See docs/CONTRACTS.md for data
+// shapes; visual design follows Sarah's mockup in mocks/index.html.
 
 // Served from the repo root (python3 -m http.server), so data/ is one level up.
 const LAMPS_URL = "../data/lamps.geojson";
@@ -13,25 +14,36 @@ const MOCK_URL = "../mocks/route_response.json";
 const SF_BBOX = { minLon: -122.52, minLat: 37.70, maxLon: -122.35, maxLat: 37.84 };
 const SF_BOUNDS = [[SF_BBOX.minLon, SF_BBOX.minLat], [SF_BBOX.maxLon, SF_BBOX.maxLat]];
 
-const STAR_COLOR = "#ffd88a";
-
-const DEAD_COLOR = "#ff6b6b";
+// Mockup palette (mirrors the CSS tokens in style.css).
+const C = {
+  night1: "#140e1a", night2: "#1e1627", night3: "#2a2035", border: "#4d3f60",
+  text: "#f7efe4", faint: "#9a8aab", cream: "#fff8ee",
+  coral: "#ff7a66", rose: "#ff8fc3", tangerine: "#ffa255", butter: "#ffd88a",
+  mint: "#7fe3bf", sky: "#8ccaff", lilac: "#b9a0ff",
+  lightOut: "#7d6a92", park: "#1a2a26", street: "#3e3150",
+};
+const ROUTE_COLOR = { lit: C.butter, shortest: C.lilac };
 
 const statusEl = document.getElementById("status");
-const resetBtn = document.getElementById("reset");
+const routesEl = document.getElementById("routes");
 const outagesBox = document.getElementById("outages");
+const alphaSlider = document.getElementById("alpha");
 
 const map = new maplibregl.Map({
   container: "map",
   style: BASEMAP,
   bounds: SF_BOUNDS,
   maxBounds: [[-122.62, 37.65], [-122.25, 37.89]],
-  attributionControl: { compact: true },
+  attributionControl: false,
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
 
 map.on("load", async () => {
-  dimBasemap();
+  // Compact attribution starts expanded; collapse it to the ⓘ button (tap to open).
+  document.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+  recolorBasemap();
+  map.addImage("spark", sparkImage(), { pixelRatio: 2 });
 
   const [lamps, dead] = await Promise.all([
     fetch(LAMPS_URL).then((r) => {
@@ -45,33 +57,70 @@ map.on("load", async () => {
   const deadIds = new Set(dead?.dead.map((d) => d.lamp_id) ?? []);
   for (const f of lamps.features) f.properties.dead = deadIds.has(f.properties.id);
 
-  document.getElementById("lamp-count").textContent =
-    `${lamps.features.length.toLocaleString()} streetlights` +
-    (dead ? ` · ${deadIds.size} reported out` : "");
+  namedLamps = lamps.features.filter((f) => f.properties.street);
 
   map.addSource("lamps", { type: "geojson", data: lamps });
   map.addSource("unmatched-outages", { type: "geojson", data: unmatchedFC(dead) });
   addStarLayers();
-  addDeadStarLayers();
+  addOutageLayers();
   addRouteLayers();
 
   map.on("click", (e) => pickPoint([e.lngLat.lng, e.lngLat.lat]));
-  resetBtn.addEventListener("click", resetPicks);
+  document.getElementById("reset").addEventListener("click", resetPicks);
   outagesBox.addEventListener("change", () => {
     if (picks.from && picks.to) requestRoute();
   });
-  setStatus("Click the map to set a start point.");
+  alphaSlider.addEventListener("change", () => {
+    if (picks.from && picks.to) requestRoute();
+  });
+  for (const card of document.querySelectorAll(".route-card")) {
+    card.addEventListener("click", () => selectRoute(card.dataset.route));
+  }
+  setStatus("Tap the map where you're starting.");
 });
 
-// Push the basemap darker so the lamps read as stars.
-function dimBasemap() {
+// ---- Basemap and lamps ----------------------------------------------------------
+
+// Re-tint CARTO Dark Matter into the mockup's charcoal-plum night.
+function recolorBasemap() {
   for (const layer of map.getStyle().layers) {
-    if (layer.type === "line") map.setPaintProperty(layer.id, "line-opacity", 0.45);
-    if (layer.type === "symbol") map.setPaintProperty(layer.id, "text-opacity", 0.5);
+    const id = layer.id;
+    try {
+      if (layer.type === "background") {
+        map.setPaintProperty(id, "background-color", C.night1);
+      } else if (layer.type === "fill") {
+        const color = /water/.test(id) ? "#0d0912"
+          : /park|wood|grass|landcover/.test(id) ? C.park
+          : /building/.test(id) ? "#211a2b"
+          : C.night2;
+        map.setPaintProperty(id, "fill-color", color);
+      } else if (layer.type === "line") {
+        const color = /water/.test(id) ? "#0d0912" : /boundary/.test(id) ? C.border : C.street;
+        map.setPaintProperty(id, "line-color", color);
+        map.setPaintProperty(id, "line-opacity", 0.55);
+      } else if (layer.type === "symbol") {
+        map.setPaintProperty(id, "text-color", C.faint);
+        map.setPaintProperty(id, "text-halo-color", C.night1);
+        map.setPaintProperty(id, "text-opacity", 0.6);
+      }
+    } catch {
+      // Some layers use data-driven or pattern paint; leave those as they are.
+    }
   }
 }
 
-// Each working lamp is a soft halo plus a bright core; both grow with zoom.
+// The mockup's four-point sparkle, drawn once for use as a map icon.
+function sparkImage(size = 48) {
+  const canvas = Object.assign(document.createElement("canvas"), { width: size, height: size });
+  const ctx = canvas.getContext("2d");
+  const s = size / 24; // path is authored on a 24-unit grid
+  ctx.scale(s, s);
+  ctx.fillStyle = C.cream;
+  ctx.fill(new Path2D("M12 0C13 8 16 11 24 12C16 13 13 16 12 24C11 16 8 13 0 12C8 11 11 8 12 0Z"));
+  return ctx.getImageData(0, 0, size, size);
+}
+
+// Working lamps: a butter glow with a cream core, becoming sparkles up close.
 function addStarLayers() {
   const alive = ["!", ["get", "dead"]];
   map.addLayer({
@@ -80,10 +129,10 @@ function addStarLayers() {
     source: "lamps",
     filter: alive,
     paint: {
-      "circle-color": STAR_COLOR,
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 14, 6, 17, 16],
+      "circle-color": C.butter,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 14, 6, 17, 14],
       "circle-blur": 1,
-      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0.25, 15, 0.35],
+      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0.22, 15, 0.32],
     },
   });
   map.addLayer({
@@ -91,17 +140,31 @@ function addStarLayers() {
     type: "circle",
     source: "lamps",
     filter: alive,
+    maxzoom: 15,
     paint: {
-      "circle-color": "#fff6e0",
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 14, 1.4, 17, 3],
+      "circle-color": C.cream,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 14, 1.4],
       "circle-opacity": 0.9,
+    },
+  });
+  map.addLayer({
+    id: "lamp-spark",
+    type: "symbol",
+    source: "lamps",
+    filter: alive,
+    minzoom: 15,
+    layout: {
+      "icon-image": "spark",
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 15, 0.3, 18, 0.65],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   });
 }
 
-// Dead stars: lamps with an open outage report, drawn as dim hollow rings.
-// Reports that matched no lamp get a smaller, fainter ring.
-function addDeadStarLayers() {
+// Dead lamps use the mockup's "light out" ring; unmatched 311 reports use its
+// coral "report" marker.
+function addOutageLayers() {
   map.addLayer({
     id: "dead-stars",
     type: "circle",
@@ -109,23 +172,28 @@ function addDeadStarLayers() {
     filter: ["get", "dead"],
     paint: {
       "circle-color": "rgba(0, 0, 0, 0)",
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2.5, 14, 4, 17, 7],
-      "circle-stroke-color": DEAD_COLOR,
-      "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 1.5],
-      "circle-stroke-opacity": 0.85,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2.5, 14, 3.5, 17, 6],
+      "circle-stroke-color": C.lightOut,
+      "circle-stroke-width": 1.5,
     },
   });
   map.addLayer({
-    id: "unmatched-outages",
+    id: "unmatched-ring",
     type: "circle",
     source: "unmatched-outages",
     paint: {
       "circle-color": "rgba(0, 0, 0, 0)",
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 14, 3, 17, 5],
-      "circle-stroke-color": DEAD_COLOR,
-      "circle-stroke-width": 1,
-      "circle-stroke-opacity": 0.45,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 14, 6, 17, 9],
+      "circle-stroke-color": C.coral,
+      "circle-stroke-width": 1.5,
+      "circle-stroke-opacity": 0.5,
     },
+  });
+  map.addLayer({
+    id: "unmatched-core",
+    type: "circle",
+    source: "unmatched-outages",
+    paint: { "circle-color": C.coral, "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 3] },
   });
 }
 
@@ -140,42 +208,73 @@ function unmatchedFC(dead) {
   };
 }
 
-// ---- Start/end picking -----------------------------------------------------
+// ---- Start/end picking ----------------------------------------------------------
 
 const picks = { from: null, to: null };
+let namedLamps = []; // lamps with a street name, for labelling picked points
 let routeRequest = 0; // ignore responses from superseded requests
 
 function pickPoint(lonLat) {
   if (!inSF(lonLat)) {
-    setStatus("That point is outside San Francisco. Pick somewhere in the city.");
+    setStatus("That's outside San Francisco.");
     return;
   }
   if (picks.from && picks.to) resetPicks();
 
   const which = picks.from ? "to" : "from";
   picks[which] = makeMarker(which, lonLat);
+  showField(which, lonLat);
 
-  if (which === "from") setStatus("Now click to set the destination.");
+  if (which === "from") setStatus("Now tap where you're going.");
   else requestRoute();
-  resetBtn.hidden = false;
 }
 
 function makeMarker(which, lonLat) {
   const el = document.createElement("div");
-  el.className = `pin pin-${which}`;
+  el.className = `marker-${which}`;
   el.title = which === "from" ? "Start" : "Destination";
+  if (which === "to") {
+    el.innerHTML = `<svg viewBox="-12 -12 24 24" width="30" height="30" aria-hidden="true">
+      <path d="M0 -12C.6 -3 3 -.6 12 0C3 .6 .6 3 0 12C-.6 3 -3 .6 -12 0C-3 -.6 -.6 -3 0 -12Z" fill="${C.sky}"/></svg>`;
+  }
   const marker = new maplibregl.Marker({ element: el, draggable: true })
     .setLngLat(lonLat)
     .addTo(map);
   marker.on("dragend", () => {
     const { lng, lat } = marker.getLngLat();
     if (!inSF([lng, lat])) {
-      setStatus("That point is outside San Francisco. Pick somewhere in the city.");
+      setStatus("That's outside San Francisco.");
       return;
     }
+    showField(which, [lng, lat]);
     if (picks.from && picks.to) requestRoute();
   });
   return marker;
+}
+
+function showField(which, lonLat) {
+  const el = document.getElementById(`${which}-value`);
+  if (lonLat) {
+    const street = nearestStreet(lonLat);
+    el.textContent = street ? `Near ${street}` : "Dropped pin";
+    el.classList.add("set");
+  } else {
+    el.textContent = which === "from" ? "Where from?" : "Where to?";
+    el.classList.remove("set");
+  }
+}
+
+// Street name of the closest named lamp within ~150 m, e.g. "Mission St".
+function nearestStreet([lon, lat]) {
+  const kx = Math.cos((lat * Math.PI) / 180);
+  let best = null;
+  let bestD = (150 / 111_320) ** 2;
+  for (const f of namedLamps) {
+    const [x, y] = f.geometry.coordinates;
+    const d = ((x - lon) * kx) ** 2 + (y - lat) ** 2;
+    if (d < bestD) [best, bestD] = [f.properties.street, d];
+  }
+  return best && best.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 function resetPicks() {
@@ -183,9 +282,10 @@ function resetPicks() {
   picks.to?.remove();
   picks.from = picks.to = null;
   routeRequest++;
+  showField("from", null);
+  showField("to", null);
   showRoute(null);
-  resetBtn.hidden = true;
-  setStatus("Click the map to set a start point.");
+  setStatus("Tap the map where you're starting.");
 }
 
 function inSF([lon, lat]) {
@@ -193,7 +293,7 @@ function inSF([lon, lat]) {
          lat >= SF_BBOX.minLat && lat <= SF_BBOX.maxLat;
 }
 
-// ---- Fetching routes -------------------------------------------------------
+// ---- Fetching routes ------------------------------------------------------------
 
 async function requestRoute() {
   const id = ++routeRequest;
@@ -212,10 +312,10 @@ async function requestRoute() {
   }
   if (id !== routeRequest) return;
 
+  setStatus("");
   showRoute(result.data);
   showStats(result.data, result.mock);
-  setStatus("");
-  fitRoutes(result.data); // after the stats card has grown to its final size
+  fitRoutes(result.data);
 }
 
 // Returns { data, mock }. Throws an Error with a human-readable message.
@@ -223,6 +323,7 @@ async function fetchRoute(from, to) {
   const params = new URLSearchParams({
     from_lon: from.lng, from_lat: from.lat,
     to_lon: to.lng, to_lat: to.lat,
+    alpha: (alphaSlider.value / 10).toFixed(1), // slider 0–100 → contract alpha 0–10
     outages: outagesBox.checked,
   });
 
@@ -245,152 +346,176 @@ async function fetchMock() {
   throw new Error("Backend offline and no mock route found.");
 }
 
-// ---- Drawing routes ----------------------------------------------------------
+// ---- Drawing routes -------------------------------------------------------------
 
-const ROUTE_COLORS = {
-  lit: "#7fd4ff",
-  shortest: "#8a93a8",
-  gap: "#ff4d5e",
-  constellation: "#fff1c9",
-};
+const ROUTES = ["shortest", "lit"];
+let routeData = null;
+let activeRoute = "lit";
 
 function addRouteLayers() {
-  for (const id of ["route-shortest", "route-lit", "dark-gaps", "constellation"]) {
-    map.addSource(id, { type: "geojson", data: emptyFC() });
+  for (const name of ROUTES) {
+    // lineMetrics enables the beam gradient along the lit route.
+    map.addSource(`route-${name}`, { type: "geojson", data: emptyFC(), lineMetrics: true });
+  }
+  map.addSource("dark-gaps", { type: "geojson", data: emptyFC() });
+  map.addSource("constellation", { type: "geojson", data: emptyFC() });
+
+  const round = { "line-cap": "round", "line-join": "round" };
+  for (const name of ROUTES) {
+    const color = ROUTE_COLOR[name];
+    map.addLayer({
+      id: `${name}-ghost`,
+      type: "line",
+      source: `route-${name}`,
+      layout: round,
+      paint: { "line-color": color, "line-width": 2.5, "line-opacity": 0.55, "line-dasharray": [0.5, 3.5] },
+    });
+    map.addLayer({
+      id: `${name}-halo`,
+      type: "line",
+      source: `route-${name}`,
+      layout: round,
+      paint: { "line-color": color, "line-width": 16, "line-blur": 10, "line-opacity": 0.4 },
+    });
+    map.addLayer({
+      id: `${name}-main`,
+      type: "line",
+      source: `route-${name}`,
+      layout: round,
+      paint: name === "lit"
+        ? {
+            "line-width": 5,
+            "line-gradient": ["interpolate", ["linear"], ["line-progress"],
+              0, C.rose, 0.2, C.coral, 0.4, C.tangerine, 0.6, C.butter, 0.8, C.mint, 1, C.sky],
+          }
+        : { "line-color": color, "line-width": 5 },
+    });
   }
 
-  // Street paths and gaps sit below the lamp stars...
-  map.addLayer({
-    id: "route-shortest",
-    type: "line",
-    source: "route-shortest",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ROUTE_COLORS.shortest, "line-width": 3, "line-dasharray": [1, 2] },
-  }, "lamp-halo");
-  map.addLayer({
-    id: "route-lit",
-    type: "line",
-    source: "route-lit",
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ROUTE_COLORS.lit, "line-width": 5, "line-opacity": 0.35 },
-  }, "lamp-halo");
   map.addLayer({
     id: "dark-gaps",
     type: "line",
     source: "dark-gaps",
     layout: { "line-cap": "round" },
-    paint: { "line-color": ROUTE_COLORS.gap, "line-width": 5, "line-opacity": 0.85 },
-  }, "lamp-halo");
-
-  // ...and the constellation sits on top of them.
+    paint: { "line-color": C.coral, "line-width": 6, "line-opacity": 0.9 },
+  });
   map.addLayer({
     id: "constellation-lines",
     type: "line",
     source: "constellation",
     filter: ["==", ["geometry-type"], "LineString"],
-    paint: { "line-color": ROUTE_COLORS.constellation, "line-width": 1.2, "line-opacity": 0.8 },
+    paint: { "line-color": C.cream, "line-width": 1.2, "line-opacity": 0.75 },
   });
   map.addLayer({
     id: "constellation-glow",
     type: "circle",
     source: "constellation",
     filter: ["==", ["geometry-type"], "Point"],
-    paint: { "circle-color": STAR_COLOR, "circle-radius": 11, "circle-blur": 1, "circle-opacity": 0.7 },
+    paint: { "circle-color": ["get", "color"], "circle-radius": 12, "circle-blur": 1, "circle-opacity": 0.45 },
   });
   map.addLayer({
     id: "constellation-stars",
-    type: "circle",
+    type: "symbol",
     source: "constellation",
     filter: ["==", ["geometry-type"], "Point"],
-    paint: { "circle-color": "#ffffff", "circle-radius": 3.5 },
+    layout: {
+      "icon-image": "spark",
+      "icon-size": 0.7,
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    },
   });
 }
 
 function showRoute(data) {
+  routeData = data;
   if (!data) {
-    for (const id of ["route-shortest", "route-lit", "dark-gaps", "constellation"]) {
+    for (const id of [...ROUTES.map((n) => `route-${n}`), "dark-gaps", "constellation"]) {
       map.getSource(id).setData(emptyFC());
     }
-    document.getElementById("stats").hidden = true;
+    routesEl.hidden = true;
     return;
   }
-
-  const { lit, shortest } = data.routes;
-  map.getSource("route-shortest").setData(lineFC(shortest.coords));
-  map.getSource("route-lit").setData(lineFC(lit.coords));
-  map.getSource("dark-gaps").setData({
-    type: "FeatureCollection",
-    features: [...lit.dark_gaps, ...shortest.dark_gaps].map((g) => lineFeature(g.coords)),
-  });
-  map.getSource("constellation").setData(constellationFC(lit));
+  for (const name of ROUTES) {
+    map.getSource(`route-${name}`).setData(lineFC(data.routes[name].coords));
+  }
+  selectRoute(data.same_route ? "lit" : activeRoute);
 }
 
-// Zoom to both routes, keeping them clear of the card in the top-left.
-function fitRoutes(data) {
-  const bounds = new maplibregl.LngLatBounds();
-  for (const c of [...data.routes.lit.coords, ...data.routes.shortest.coords]) bounds.extend(c);
-  const card = document.getElementById("card").getBoundingClientRect();
-  map.fitBounds(bounds, {
-    padding: { top: card.bottom + 24, bottom: 48, left: 48, right: 48 },
-    maxZoom: 16,
+// The active route is drawn solid with a halo, its dark gaps and constellation;
+// the other is a dashed ghost you can switch to from its card.
+function selectRoute(name) {
+  activeRoute = name;
+  for (const n of ROUTES) {
+    const on = n === name;
+    map.setLayoutProperty(`${n}-ghost`, "visibility", on ? "none" : "visible");
+    map.setLayoutProperty(`${n}-halo`, "visibility", on ? "visible" : "none");
+    map.setLayoutProperty(`${n}-main`, "visibility", on ? "visible" : "none");
+    document.querySelector(`.route-card[data-route="${n}"]`).setAttribute("aria-pressed", on);
+  }
+  if (!routeData) return;
+  const route = routeData.routes[name];
+  map.getSource("dark-gaps").setData({
+    type: "FeatureCollection",
+    features: route.dark_gaps.map((g) => lineFeature(g.coords)),
   });
+  map.getSource("constellation").setData(constellationFC(route, ROUTE_COLOR[name]));
 }
 
 // Lamp vertices joined in walking order. Contract: constellation is empty when
 // the route passes fewer than 2 lamps, so fall back to the street geometry.
-function constellationFC(route) {
+function constellationFC(route, color) {
   const pts = route.constellation.map((s) => s.coord);
-  const line = pts.length >= 2 ? pts : route.coords;
   return {
     type: "FeatureCollection",
     features: [
-      lineFeature(line),
+      lineFeature(pts.length >= 2 ? pts : route.coords),
       ...route.constellation.map((s) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: s.coord },
-        properties: { id: s.id },
+        properties: { id: s.id, color },
       })),
     ],
   };
 }
 
-// ---- Stats card -------------------------------------------------------------
-
-function showStats(data, mock) {
-  for (const name of ["lit", "shortest"]) {
-    const r = data.routes[name];
-    setStat(name, "minutes", `${Math.round(r.minutes)} min`);
-    setStat(name, "length", formatDistance(r.length_m));
-    setStat(name, "lit", `${Math.round(r.lit_frac * 100)}%`);
-    setStat(name, "gap", r.max_gap_m >= 1 ? `${Math.round(r.max_gap_m)} m` : "none");
-  }
-
-  const notes = [];
-  if (mock) notes.push("Showing a sample route: the routing server is offline.");
-  if (data.detour_capped) notes.push("No well-lit route found within a reasonable detour; showing the best compromise.");
-  if (data.same_route) notes.push("The shortest route is already the best-lit one.");
-  else {
-    const extra = Math.round(data.routes.lit.minutes - data.routes.shortest.minutes);
-    if (extra > 0) notes.push(`The lit route adds about ${extra} min.`);
-  }
-  if (data.alpha_used < data.request.alpha) {
-    notes.push(`Lighting preference relaxed from ${data.request.alpha} to ${data.alpha_used} to keep the detour reasonable.`);
-  }
-  document.getElementById("notes").replaceChildren(
-    ...notes.map((t) => Object.assign(document.createElement("li"), { textContent: t }))
-  );
-  document.getElementById("stats").hidden = false;
+// Zoom to both routes.
+function fitRoutes(data) {
+  const bounds = new maplibregl.LngLatBounds();
+  for (const name of ROUTES) for (const c of data.routes[name].coords) bounds.extend(c);
+  map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
 }
 
-function setStat(route, stat, text) {
-  document.querySelector(`[data-route="${route}"][data-stat="${stat}"]`).textContent = text;
+// ---- Route cards ----------------------------------------------------------------
+
+function showStats(data, mock) {
+  if (mock) console.info("Routing server offline; showing mocks/route_response.json.");
+
+  for (const name of ROUTES) {
+    const r = data.routes[name];
+    const card = document.querySelector(`.route-card[data-route="${name}"]`);
+    card.querySelector('[data-stat="minutes"]').textContent = `${Math.round(r.minutes)} min`;
+    card.querySelector('[data-stat="tag"]').textContent =
+      `${formatDistance(r.length_m)} · ${Math.round(r.lit_frac * 100)}% lit`;
+    card.querySelector('[data-stat="lit-bar"]').style.width = `${r.lit_frac * 100}%`;
+  }
+  document.querySelector('.route-card[data-route="shortest"]').hidden = data.same_route;
+
+  // Contract 4: when the detour cap kicked in, the UI should say so.
+  const extra = Math.round(data.routes.lit.minutes - data.routes.shortest.minutes);
+  document.getElementById("note").textContent =
+    data.detour_capped ? "There's no well-lit way there without a long detour. This is the best we found."
+    : data.same_route ? "The shortest way is already the brightest."
+    : extra > 0 ? `${extra} extra min for a brighter walk.`
+    : "Brighter, and no slower.";
+  routesEl.hidden = false;
 }
 
 function formatDistance(m) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
-// ---- Helpers ------------------------------------------------------------------
+// ---- Helpers ----------------------------------------------------------------------
 
 function lineFeature(coords) {
   return { type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} };
