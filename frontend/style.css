@@ -4,6 +4,8 @@
   --text: #e8ecf5;
   --muted: #8a93a8;
   --star: #ffd88a;
+  --pin-from: #4ade80;
+  --pin-to: #f472b6;
 }
 
 html, body {
@@ -43,4 +45,46 @@ html, body {
   margin: 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+#card #status {
+  margin-top: 8px;
+  color: var(--text);
+}
+
+#card #status:empty {
+  display: none;
+}
+
+#reset {
+  margin-top: 10px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#reset:hover {
+  border-color: var(--star);
+}
+
+.pin {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+  cursor: grab;
+}
+
+.pin-from {
+  background: var(--pin-from);
+}
+
+.pin-to {
+  background: var(--pin-to);
 }

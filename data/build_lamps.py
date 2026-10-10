@@ -107,7 +107,7 @@ def download_sfpuc():
 def clean(value):
     """Empty strings become null (contract: missing values are null)."""
     if isinstance(value, str):
-        value = value.strip()
+        value = value.replace("_", " ").strip()  # source has e.g. "SOUTH_VAN_NESS"
         return value or None
     return value
 
