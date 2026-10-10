@@ -1,0 +1,46 @@
+:root {
+  --bg: #05070d;
+  --card-bg: rgba(10, 14, 26, 0.82);
+  --text: #e8ecf5;
+  --muted: #8a93a8;
+  --star: #ffd88a;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+}
+
+#card {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid rgba(255, 216, 138, 0.18);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+
+#card h1 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
