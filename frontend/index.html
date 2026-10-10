@@ -33,14 +33,16 @@
 
     <div class="section">
       <div class="fields">
-        <div class="field">
+        <form class="field" id="from-form" role="search">
           <span class="pin pin-from-swatch"></span>
-          <span class="field-value" id="from-value">Where from?</span>
-        </div>
-        <div class="field">
+          <input id="from-input" type="search" placeholder="Where from?" autocomplete="off" enterkeyhint="search" aria-label="Start address">
+        </form>
+        <ul class="results" id="from-results" hidden></ul>
+        <form class="field" id="to-form" role="search">
           <span class="pin pin-to-swatch"></span>
-          <span class="field-value" id="to-value">Where to?</span>
-        </div>
+          <input id="to-input" type="search" placeholder="Where to?" autocomplete="off" enterkeyhint="search" aria-label="Destination address">
+        </form>
+        <ul class="results" id="to-results" hidden></ul>
       </div>
 
       <div class="slider-row">

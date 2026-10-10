@@ -10,6 +10,10 @@ const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.jso
 const API_URL = "http://localhost:8000";
 const MOCK_URL = "../mocks/route_response.json";
 
+// Address search. Nominatim's usage policy: at most 1 request per second and no
+// search-as-you-type, so we only search when the user presses Enter.
+const GEOCODE_URL = "https://nominatim.openstreetmap.org/search";
+
 // Contract bounding box: lon -122.52..-122.35, lat 37.70..37.84
 const SF_BBOX = { minLon: -122.52, minLat: 37.70, maxLon: -122.35, maxLat: 37.84 };
 const SF_BOUNDS = [[SF_BBOX.minLon, SF_BBOX.minLat], [SF_BBOX.maxLon, SF_BBOX.maxLat]];
@@ -69,6 +73,7 @@ map.on("load", async () => {
   addRouteLayers();
 
   map.on("click", (e) => pickPoint([e.lngLat.lng, e.lngLat.lat]));
+  for (const which of ["from", "to"]) setUpSearch(which);
   document.getElementById("reset").addEventListener("click", resetPicks);
   outagesBox.addEventListener("change", () => {
     if (picks.from && picks.to) requestRoute();
@@ -79,7 +84,7 @@ map.on("load", async () => {
   for (const card of document.querySelectorAll(".route-card")) {
     card.addEventListener("click", () => selectRoute(card.dataset.route));
   }
-  setStatus("Tap the map where you're starting.");
+  setStatus("Search for an address or tap the map.");
 });
 
 // ---- Basemap and lamps ----------------------------------------------------------
@@ -217,19 +222,25 @@ const picks = { from: null, to: null };
 let namedLamps = []; // lamps with a street name, for labelling picked points
 let routeRequest = 0; // ignore responses from superseded requests
 
+// Map taps fill the first empty field; once both are set, a tap starts over.
 function pickPoint(lonLat) {
   if (!inSF(lonLat)) {
     setStatus("That's outside San Francisco.");
     return;
   }
   if (picks.from && picks.to) resetPicks();
+  setPoint(picks.from ? "to" : "from", lonLat);
+}
 
-  const which = picks.from ? "to" : "from";
-  picks[which] = makeMarker(which, lonLat);
-  showField(which, lonLat);
+// Place (or move) the start or end marker. `label` comes from address search;
+// map taps and drags label the point with the nearest street instead.
+function setPoint(which, lonLat, label) {
+  if (picks[which]) picks[which].setLngLat(lonLat);
+  else picks[which] = makeMarker(which, lonLat);
+  setInput(which, label ?? nearLabel(lonLat));
 
-  if (which === "from") setStatus("Now tap where you're going.");
-  else requestRoute();
+  if (picks.from && picks.to) requestRoute();
+  else setStatus(which === "from" ? "Now where are you going?" : "Now where are you starting?");
 }
 
 function makeMarker(which, lonLat) {
@@ -240,6 +251,8 @@ function makeMarker(which, lonLat) {
     el.innerHTML = `<svg viewBox="-12 -12 24 24" width="30" height="30" aria-hidden="true">
       <path d="M0 -12C.6 -3 3 -.6 12 0C3 .6 .6 3 0 12C-.6 3 -3 .6 -12 0C-3 -.6 -.6 -3 0 -12Z" fill="${C.sky}"/></svg>`;
   }
+  // Taps on a marker shouldn't also count as a map tap.
+  el.addEventListener("click", (e) => e.stopPropagation());
   const marker = new maplibregl.Marker({ element: el, draggable: true })
     .setLngLat(lonLat)
     .addTo(map);
@@ -249,22 +262,19 @@ function makeMarker(which, lonLat) {
       setStatus("That's outside San Francisco.");
       return;
     }
-    showField(which, [lng, lat]);
+    setInput(which, nearLabel([lng, lat]));
     if (picks.from && picks.to) requestRoute();
   });
   return marker;
 }
 
-function showField(which, lonLat) {
-  const el = document.getElementById(`${which}-value`);
-  if (lonLat) {
-    const street = nearestStreet(lonLat);
-    el.textContent = street ? `Near ${street}` : "Dropped pin";
-    el.classList.add("set");
-  } else {
-    el.textContent = which === "from" ? "Where from?" : "Where to?";
-    el.classList.remove("set");
-  }
+function setInput(which, text) {
+  document.getElementById(`${which}-input`).value = text;
+}
+
+function nearLabel(lonLat) {
+  const street = nearestStreet(lonLat);
+  return street ? `Near ${street}` : "Dropped pin";
 }
 
 // Street name of the closest named lamp within ~150 m, e.g. "Mission St".
@@ -285,15 +295,99 @@ function resetPicks() {
   picks.to?.remove();
   picks.from = picks.to = null;
   routeRequest++;
-  showField("from", null);
-  showField("to", null);
+  for (const which of ["from", "to"]) {
+    setInput(which, "");
+    showResults(which, null);
+  }
   showRoute(null);
-  setStatus("Tap the map where you're starting.");
+  setStatus("Search for an address or tap the map.");
 }
 
 function inSF([lon, lat]) {
   return lon >= SF_BBOX.minLon && lon <= SF_BBOX.maxLon &&
          lat >= SF_BBOX.minLat && lat <= SF_BBOX.maxLat;
+}
+
+// ---- Address search (Nominatim) -------------------------------------------------
+
+let nextGeocodeAt = 0; // Nominatim allows one request per second
+
+function setUpSearch(which) {
+  const form = document.getElementById(`${which}-form`);
+  const input = document.getElementById(`${which}-input`);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || q.startsWith("Near ") || q === "Dropped pin") return;
+    showResults(which, "Searching…");
+    try {
+      showResults(which, await geocode(q));
+    } catch {
+      showResults(which, "Search isn't working right now. Tap the map instead.");
+    }
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") showResults(which, null);
+  });
+}
+
+async function geocode(q) {
+  const wait = nextGeocodeAt - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  nextGeocodeAt = Date.now() + 1000;
+
+  const params = new URLSearchParams({
+    q,
+    format: "jsonv2",
+    addressdetails: 1,
+    limit: 5,
+    // Only places inside the contract's SF bounding box.
+    viewbox: `${SF_BBOX.minLon},${SF_BBOX.maxLat},${SF_BBOX.maxLon},${SF_BBOX.minLat}`,
+    bounded: 1,
+  });
+  const res = await fetch(`${GEOCODE_URL}?${params}`, { headers: { "Accept-Language": "en" } });
+  if (!res.ok) throw new Error(`Nominatim: HTTP ${res.status}`);
+  return (await res.json()).map((r) => ({
+    lonLat: [Number(r.lon), Number(r.lat)],
+    ...placeLabel(r),
+  }));
+}
+
+// "2000 Mission St" + "Mission District" instead of Nominatim's long display_name.
+function placeLabel(r) {
+  const a = r.address ?? {};
+  const street = [a.house_number, a.road].filter(Boolean).join(" ");
+  const title = r.name || street || r.display_name.split(",")[0];
+  const area = a.neighbourhood || a.suburb || a.quarter || "San Francisco";
+  return { title, sub: title === street ? area : street || area };
+}
+
+// results: null hides the list, a string shows a message, an array shows matches.
+function showResults(which, results) {
+  const list = document.getElementById(`${which}-results`);
+  list.hidden = results === null;
+  if (results === null) return list.replaceChildren();
+
+  if (typeof results === "string" || results.length === 0) {
+    const li = document.createElement("li");
+    li.className = "results-msg";
+    li.textContent = typeof results === "string" ? results : "Nothing found in San Francisco.";
+    return list.replaceChildren(li);
+  }
+  list.replaceChildren(...results.map((r) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.append(r.title);
+    if (r.sub) btn.append(Object.assign(document.createElement("span"), { textContent: r.sub }));
+    btn.addEventListener("click", () => {
+      showResults(which, null);
+      setPoint(which, r.lonLat, r.title);
+      if (!(picks.from && picks.to)) map.flyTo({ center: r.lonLat, zoom: Math.max(map.getZoom(), 15) });
+    });
+    li.append(btn);
+    return li;
+  }));
 }
 
 // ---- Fetching routes ------------------------------------------------------------
