@@ -1,11 +1,12 @@
 """Build data/lamps.geojson (Contract 1 in docs/CONTRACTS.md).
 
-v0: SFPUC streetlights only. v1 will merge OSM street_lamp nodes and dedupe
-within 5 m, keeping the SFPUC record.
+Sources: SFPUC Streetlights (ArcGIS) plus OpenStreetMap highway=street_lamp
+nodes. An OSM lamp within 5 m of an SFPUC lamp is the same physical lamp, so
+only the SFPUC record is kept.
 
 Usage:
-    python3 data/build_lamps.py            # use cached raw download if present
-    python3 data/build_lamps.py --refresh  # re-download from SFPUC first
+    python3 data/build_lamps.py            # use cached raw downloads if present
+    python3 data/build_lamps.py --refresh  # re-download both sources first
 
 Standard library only.
 """
@@ -14,16 +15,18 @@ import argparse
 import json
 import ssl
 import sys
+import math
 import time
 import urllib.parse
-from collections import Counter
 import urllib.request
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent
 RAW_DIR = DATA_DIR / "raw"
 SFPUC_RAW = RAW_DIR / "sfpuc_streetlights.geojson"
+OSM_RAW = RAW_DIR / "osm_street_lamps.json"
 OUT = DATA_DIR / "lamps.geojson"
 
 SFPUC_LAYER = (
@@ -32,10 +35,17 @@ SFPUC_LAYER = (
 )
 PAGE_SIZE = 2000  # layer's maxRecordCount
 
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+USER_AGENT = "safe-light-constellations/0.1 (hackathon project; github.com/idksarah/hyphen-hacks)"
+
 # SF bounding box from the contract: lon -122.52..-122.35, lat 37.70..37.84
 BBOX = (-122.52, 37.70, -122.35, 37.84)
 
 COORD_DECIMALS = 6  # ~0.1 m
+DEDUPE_M = 5.0
+
+# Every lamp carries the same keys; contract says missing values are null.
+EXTRA_KEYS = ("pole_number", "pole_type", "material", "street")
 
 
 def ssl_context():
@@ -64,6 +74,20 @@ def get_json(url, params, retries=3):
                 raise
             print(f"  retry {attempt} after error: {e}", file=sys.stderr)
             time.sleep(2 * attempt)
+
+
+def post_json(url, data, retries=3):
+    body = urllib.parse.urlencode(data).encode()
+    req = urllib.request.Request(url, data=body, headers={"User-Agent": USER_AGENT})
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=180, context=SSL_CTX) as resp:
+                return json.load(resp)
+        except Exception as e:  # Overpass is often busy (429/504)
+            if attempt == retries:
+                raise
+            print(f"  retry {attempt} after error: {e}", file=sys.stderr)
+            time.sleep(10 * attempt)
 
 
 def download_sfpuc():
@@ -102,6 +126,17 @@ def download_sfpuc():
     }
     SFPUC_RAW.write_text(json.dumps(raw))
     print(f"Saved {SFPUC_RAW.relative_to(DATA_DIR.parent)}")
+
+
+def download_osm():
+    s, w, n, e = BBOX[1], BBOX[0], BBOX[3], BBOX[2]
+    query = f'[out:json][timeout:120];node["highway"="street_lamp"]({s},{w},{n},{e});out;'
+    print("Downloading OSM street lamps from Overpass")
+    raw = post_json(OVERPASS_URL, {"data": query})
+    raw["downloaded_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    RAW_DIR.mkdir(exist_ok=True)
+    OSM_RAW.write_text(json.dumps(raw))
+    print(f"Saved {len(raw['elements'])} OSM lamps to {OSM_RAW.relative_to(DATA_DIR.parent)}")
 
 
 def clean(value):
@@ -146,6 +181,55 @@ def load_sfpuc():
     return lamps
 
 
+def load_osm():
+    raw = json.loads(OSM_RAW.read_text())
+    lamps, dropped = [], {"out_of_bbox": 0}
+    for el in raw["elements"]:
+        lon, lat = round(el["lon"], COORD_DECIMALS), round(el["lat"], COORD_DECIMALS)
+        if not in_bbox(lon, lat):
+            dropped["out_of_bbox"] += 1
+            continue
+        lamps.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {"id": f"osm:{el['id']}", "source": "osm", **dict.fromkeys(EXTRA_KEYS)},
+        })
+    print(f"OSM: kept {len(lamps)}, dropped {dropped}")
+    return lamps
+
+
+# Local equirectangular projection; plenty accurate for 5 m checks across SF.
+M_PER_DEG_LAT = 111_320.0
+M_PER_DEG_LON = 111_320.0 * math.cos(math.radians(37.77))
+
+
+def to_m(coords):
+    return coords[0] * M_PER_DEG_LON, coords[1] * M_PER_DEG_LAT
+
+
+def merge(sfpuc, osm):
+    """Drop OSM lamps within DEDUPE_M of an SFPUC lamp (grid lookup, 5 m cells)."""
+    grid = {}
+    for f in sfpuc:
+        x, y = to_m(f["geometry"]["coordinates"])
+        grid.setdefault((int(x // DEDUPE_M), int(y // DEDUPE_M)), []).append((x, y))
+
+    kept = []
+    for f in osm:
+        x, y = to_m(f["geometry"]["coordinates"])
+        cx, cy = int(x // DEDUPE_M), int(y // DEDUPE_M)
+        near = any(
+            math.hypot(x - px, y - py) <= DEDUPE_M
+            for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+            for px, py in grid.get((cx + dx, cy + dy), ())
+        )
+        if not near:
+            kept.append(f)
+    print(f"Merge: {len(osm) - len(kept)} OSM lamps within {DEDUPE_M:g} m of SFPUC dropped, "
+          f"{len(kept)} added")
+    return sfpuc + kept
+
+
 def check(lamps):
     counts = Counter(f["properties"]["id"] for f in lamps)
     dupes = {i for i, n in counts.items() if n > 1}
@@ -154,6 +238,7 @@ def check(lamps):
     for f in lamps:
         p = f["properties"]
         assert p["id"] and p["source"] in ("sfpuc", "osm"), p
+        assert set(p) == {"id", "source", *EXTRA_KEYS}, p
         assert in_bbox(*f["geometry"]["coordinates"]), f
 
 
@@ -174,7 +259,9 @@ def main():
 
     if args.refresh or not SFPUC_RAW.exists():
         download_sfpuc()
-    lamps = load_sfpuc()
+    if args.refresh or not OSM_RAW.exists():
+        download_osm()
+    lamps = merge(load_sfpuc(), load_osm())
     check(lamps)
     write(lamps)
 
