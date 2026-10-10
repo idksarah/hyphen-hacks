@@ -12,8 +12,8 @@ from scipy.spatial import cKDTree
 
 STEP_M = 3.0
 LIGHT_R_M = 20.0
-DEFAULT_ALPHA = 3.0
-DEFAULT_BETA = 0.02
+DEFAULT_ALPHA = 2.0  # tuned with backend/tune.py
+DEFAULT_BETA = 0.005
 
 
 @dataclass(frozen=True)

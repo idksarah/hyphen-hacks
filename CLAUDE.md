@@ -18,7 +18,8 @@ Contract changes follow the rules in `docs/CONTRACTS.md` ("Changing a contract")
 - Run the API: `.venv/bin/python -m uvicorn --app-dir backend server:app --port 8000` (loads the graph at startup, ~4 s; restart after rebuilding graph.pkl or dead_lamps.json). Route logic is in `backend/routing.py`; API tests: `tests/test_api.py` (skipped without graph.pkl).
 - osmnx caches Overpass/Nominatim downloads in `cache/` relative to the working directory (`tests/cache/` so far); gitignored.
 - SFPUC lamp IDs are `sfpuc:<assetnum>` (e.g. `sfpuc:A10P0001`), not OBJECTID.
-- `mocks/route_response.json` uses real streets and real lamps from `data/lamps.geojson`; regenerate it with `.venv/bin/python backend/make_mock.py` if the route shape or lamp IDs change.
+- `mocks/route_response.json` is a saved real `/route` response for the Contract 4 example trip; regenerate it with `.venv/bin/python backend/make_mock.py` after rebuilding the graph.
+- α/β defaults (in `backend/scoring.py`) were tuned with `backend/tune.py`; changing them means rebuilding `graph.pkl` (precomputed `cost`) and updating the defaults table in `docs/CONTRACTS.md`.
 
 ## Datasets
 

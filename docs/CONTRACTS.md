@@ -113,8 +113,8 @@ The server runs at `http://localhost:8000` with CORS open to all origins. Target
 |---|---|---|---|---|
 | `from_lon`, `from_lat` | float | yes | — | Start point |
 | `to_lon`, `to_lat` | float | yes | — | End point |
-| `alpha` | float | no | 3.0 | Darkness penalty, 0–10 |
-| `beta` | float | no | 0.02 | Long-gap penalty, 0–0.2 |
+| `alpha` | float | no | 2.0 | Darkness penalty, 0–10 |
+| `beta` | float | no | 0.005 | Long-gap penalty, 0–0.2 |
 | `outages` | bool | no | false | Treat lamps in `dead_lamps.json` as off |
 
 Example: `/route?from_lon=-122.4194&from_lat=37.7749&to_lon=-122.4108&to_lat=37.7596&outages=true`
@@ -123,9 +123,9 @@ Response 200 (coordinate arrays shortened):
 
 ```json
 {
-  "request": { "from": [-122.4194, 37.7749], "to": [-122.4108, 37.7596], "alpha": 3.0, "beta": 0.02, "outages": true },
+  "request": { "from": [-122.4194, 37.7749], "to": [-122.4108, 37.7596], "alpha": 2.0, "beta": 0.005, "outages": true },
   "snapped": { "from": [-122.41935, 37.77482], "to": [-122.41079, 37.75966] },
-  "alpha_used": 3.0,
+  "alpha_used": 2.0,
   "detour_capped": false,
   "same_route": false,
   "routes": {
@@ -226,3 +226,4 @@ Sarah's lane:
 
 - 2026-10-10 (Claire): SFPUC lamp IDs use `assetnum` instead of `OBJECTID`, e.g. `sfpuc:A10P0001` (the numeric `sfpuc:48213` in the examples above is just illustrative). The source is the [SFPUC Streetlights layer](https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/SFPUC_Streetlights/FeatureServer/0), where `objectid` is system-maintained and can be renumbered on republish; `assetnum` is SFPUC's asset tag (non-null and unique across all 24,802 lamps). Type is still string; Sarah's code reads `id` only.
 - 2026-10-10 (Sarah): Defined the edge `cost` formula in Contract 3. A dark meter costs 1 + α times a lit one, and β × gap² penalizes long dark runs, so at the defaults (α = 3, β = 0.02) a 150 m gap adds the equivalent of 450 m of walking. The defaults may change after tuning on real lamps; the API params and their ranges don't.
+- 2026-10-10 (Sarah): Default α is now 2.0 (was 3.0) and default β 0.005 (was 0.02), tuned on 120 random 0.8–3 km trips with real lamps (`backend/tune.py`). Past α = 2 the lit share barely improves (+0.25 → +0.27) while the median detour grows from 6% to 10%, and β mostly lengthens detours without removing long gaps. Ranges and types are unchanged. The frontend's slider default moves from 30 to 20 to match.

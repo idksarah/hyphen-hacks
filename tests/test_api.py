@@ -14,6 +14,7 @@ if not (REPO / "data" / "graph.pkl").exists():
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from scoring import DEFAULT_ALPHA, DEFAULT_BETA  # noqa: E402
 from server import app  # noqa: E402
 
 EXAMPLE = dict(from_lon=-122.4194, from_lat=37.7749, to_lon=-122.4108, to_lat=37.7596)
@@ -45,7 +46,7 @@ def test_route_has_contract_shape(client):
     assert set(body) == set(mock)
     assert body["request"] == {"from": [EXAMPLE["from_lon"], EXAMPLE["from_lat"]],
                                "to": [EXAMPLE["to_lon"], EXAMPLE["to_lat"]],
-                               "alpha": 3.0, "beta": 0.02, "outages": False}
+                               "alpha": DEFAULT_ALPHA, "beta": DEFAULT_BETA, "outages": False}
     for name in ("shortest", "lit"):
         r = body["routes"][name]
         assert set(r) == ROUTE_KEYS
