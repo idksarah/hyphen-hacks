@@ -4,6 +4,9 @@ data/graph.pkl
 # Raw downloads used to build lamps/dead_lamps
 data/raw/
 
+# osmnx / Overpass download cache
+cache/
+
 # Python
 __pycache__/
 *.pyc
