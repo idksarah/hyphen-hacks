@@ -1,0 +1,10 @@
+# graph.pkl only loads with the osmnx/networkx versions that built it (Contract 3)
+osmnx==2.1.1
+networkx==3.7
+numpy==2.5.3
+scipy==1.18.1
+shapely==2.2.0
+pyproj==3.8.0
+geopandas==1.2.0
+
+pytest==9.1.1

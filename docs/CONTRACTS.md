@@ -98,7 +98,7 @@ Claire never reads this file; it is listed so the API's inputs are pinned down. 
 | `max_gap` | float, m | Longest dark run inside the edge |
 | `lead_dark`, `trail_dark` | float, m | Dark run at the edge's start and end, for merging gaps across intersections |
 | `lamp_ids` | list[str] | Lamps within 20 m, ordered along the edge u→v |
-| `cost` | float | Precomputed lit-route weight for default α and β |
+| `cost` | float | Precomputed lit-route weight for default α and β: `length × (1 + α × (1 − lit_frac)) + β × max_gap²` |
 | `*_outage` | same types | `lit_frac`, `max_gap`, `lead_dark`, `trail_dark`, `cost` recomputed with dead lamps removed |
 
 Nodes keep osmnx's projected `x`, `y` (meters) plus `lon`, `lat` for output. `backend/requirements.txt` pins osmnx and networkx versions, since pickles break across versions.
@@ -225,3 +225,4 @@ Sarah's lane:
 ## Change log
 
 - 2026-10-10 (Claire): SFPUC lamp IDs use `assetnum` instead of `OBJECTID`, e.g. `sfpuc:A10P0001` (the numeric `sfpuc:48213` in the examples above is just illustrative). The source is the [SFPUC Streetlights layer](https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/SFPUC_Streetlights/FeatureServer/0), where `objectid` is system-maintained and can be renumbered on republish; `assetnum` is SFPUC's asset tag (non-null and unique across all 24,802 lamps). Type is still string; Sarah's code reads `id` only.
+- 2026-10-10 (Sarah): Defined the edge `cost` formula in Contract 3. A dark meter costs 1 + α times a lit one, and β × gap² penalizes long dark runs, so at the defaults (α = 3, β = 0.02) a 150 m gap adds the equivalent of 450 m of walking. The defaults may change after tuning on real lamps; the API params and their ranges don't.

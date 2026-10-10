@@ -4,6 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Asterism — safer night walks</title>
+  <!-- Fetch data and open basemap connections before app.js runs. Keep URLs in sync with app.js. -->
+  <link rel="preload" href="../data/lamps.geojson" as="fetch" crossorigin>
+  <link rel="preload" href="../data/dead_lamps.json" as="fetch" crossorigin>
+  <link rel="preload" href="../mocks/route_response.json" as="fetch" crossorigin>
+  <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
+  <link rel="preconnect" href="https://tiles.basemaps.cartocdn.com" crossorigin>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>

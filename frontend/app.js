@@ -39,19 +39,22 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
 
+// Start downloading data now, in parallel with the basemap, instead of waiting
+// for its "load" event. index.html preloads the same URLs, so these reuse that.
+const lampsPromise = fetch(LAMPS_URL).then((r) => {
+  if (!r.ok) throw new Error(`lamps.geojson: HTTP ${r.status}`);
+  return r.json();
+});
+lampsPromise.catch(() => {}); // handled when awaited below; avoid an early unhandled-rejection warning
+const deadPromise = fetch(DEAD_URL).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+
 map.on("load", async () => {
   // Compact attribution starts expanded; collapse it to the ⓘ button (tap to open).
   document.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
   recolorBasemap();
   map.addImage("spark", sparkImage(), { pixelRatio: 2 });
 
-  const [lamps, dead] = await Promise.all([
-    fetch(LAMPS_URL).then((r) => {
-      if (!r.ok) throw new Error(`lamps.geojson: HTTP ${r.status}`);
-      return r.json();
-    }),
-    fetch(DEAD_URL).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-  ]);
+  const [lamps, dead] = await Promise.all([lampsPromise, deadPromise]);
 
   // Contract 2: only the set of dead[].lamp_id matters for marking lamps.
   const deadIds = new Set(dead?.dead.map((d) => d.lamp_id) ?? []);
