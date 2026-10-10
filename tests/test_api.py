@@ -103,3 +103,72 @@ def test_errors(client, params, status, code):
     assert res.status_code == status
     body = res.json()
     assert body["error"] == code and isinstance(body["message"], str) and body["message"]
+
+
+# --- Contract 5: live walk sharing -------------------------------------------------
+
+def make_share(client):
+    route = client.get("/route", params=EXAMPLE).json()["routes"]["lit"]
+    res = client.post("/shares", json={"route": route, "route_name": "lit",
+                                       "from_label": "Near Market St", "to_label": "Near Bryant St"})
+    assert res.status_code == 201
+    return route, res.json()
+
+
+def test_share_round_trip(client):
+    route, share = make_share(client)
+    view = client.get(f"/shares/{share['id']}").json()
+    assert view["status"] == "active" and view["location"] is None
+    assert view["route"]["coords"] == route["coords"]
+    assert "token" not in view
+
+    mid = route["coords"][len(route["coords"]) // 2]
+    res = client.post(f"/shares/{share['id']}/location",
+                      json={"token": share["token"], "coord": mid, "accuracy_m": 6, "progress_m": 900})
+    assert res.status_code == 200
+    loc = client.get(f"/shares/{share['id']}").json()["location"]
+    assert loc["coord"] == [round(c, 6) for c in mid] and loc["progress_m"] == 900
+
+    assert client.post(f"/shares/{share['id']}/end", json={"token": share["token"], "arrived": True}).status_code == 200
+    assert client.get(f"/shares/{share['id']}").json()["status"] == "arrived"
+
+
+def test_share_rejects_wrong_token(client):
+    route, share = make_share(client)
+    res = client.post(f"/shares/{share['id']}/location",
+                      json={"token": "x" * 32, "coord": route["coords"][0], "progress_m": 0})
+    assert res.status_code == 403 and res.json()["error"] == "bad_token"
+
+
+@pytest.mark.parametrize("patch", [
+    {"route_name": "fastest"},
+    {"route": {"coords": [[0, 0], [1, 1]]}},
+])
+def test_share_create_validation(client, patch):
+    route = client.get("/route", params=EXAMPLE).json()["routes"]["lit"]
+    body = {"route": route, "route_name": "lit", **patch}
+    if "route" in patch:
+        body["route"] = {**route, **patch["route"]}
+    res = client.post("/shares", json=body)
+    assert res.status_code == 400 and res.json()["error"] == "bad_params"
+
+
+def test_share_location_outside_sf_rejected(client):
+    _, share = make_share(client)
+    res = client.post(f"/shares/{share['id']}/location",
+                      json={"token": share["token"], "coord": [-73.98, 40.75], "progress_m": 0})
+    assert res.status_code == 400
+
+
+def test_unknown_share_404(client):
+    res = client.get("/shares/doesnotexist")
+    assert res.status_code == 404 and res.json()["error"] == "share_not_found"
+
+
+def test_serves_frontend_but_not_the_rest_of_the_repo(client):
+    assert client.get("/", follow_redirects=False).headers["location"] == "/frontend/"
+    assert "maplibre" in client.get("/frontend/").text
+    assert client.get("/data/lamps.geojson").status_code == 200
+    assert client.get("/mocks/route_response.json").status_code == 200
+    for path in ("/data/graph.pkl", "/backend/server.py", "/.git/config", "/frontend/../backend/server.py"):
+        assert client.get(path).status_code in (400, 404), path

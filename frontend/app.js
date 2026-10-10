@@ -7,7 +7,9 @@ const DEAD_URL = "../data/dead_lamps.json"; // optional; skipped if missing
 const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
 // Contract 4: Sarah's API. If it's not running, fall back to her mock response.
-const API_URL = "http://localhost:8000";
+// On the dev server (python3 -m http.server 5173) the API is port 8000 on the same
+// host; otherwise backend/server.py serves this page too, so it's the same origin.
+const API_URL = location.port === "5173" ? `${location.protocol}//${location.hostname}:8000` : location.origin;
 const MOCK_URL = "../mocks/route_response.json";
 
 // Contract bounding box: lon -122.52..-122.35, lat 37.70..37.84
@@ -21,8 +23,13 @@ const C = {
   coral: "#ff7a66", rose: "#ff8fc3", tangerine: "#ffa255", butter: "#ffd88a",
   mint: "#7fe3bf", sky: "#8ccaff", lilac: "#b9a0ff", gray: "#a39fae",
   lightOut: "#7d6a92", park: "#1a2a26", street: "#3e3150",
+  darkCore: "#1a1f4d", darkEdge: "#5866b8", // unlit stretches: the beam goes out
 };
 const ROUTE_COLOR = { lit: C.butter, shortest: C.gray };
+
+// "find": pick points and compare routes. "follow": walking a route with GPS
+// (follow.js). "view": watching someone else's shared walk (follow.js).
+let mode = "find";
 
 const statusEl = document.getElementById("status");
 const routesEl = document.getElementById("routes");
@@ -63,12 +70,12 @@ map.on("load", async () => {
   namedLamps = lamps.features.filter((f) => f.properties.street);
 
   map.addSource("lamps", { type: "geojson", data: lamps });
-  map.addSource("unmatched-outages", { type: "geojson", data: unmatchedFC(dead) });
   addStarLayers();
   addOutageLayers();
   addRouteLayers();
 
   map.on("click", (e) => {
+    if (mode !== "find") return;
     // Tapping a drawn route switches to it instead of dropping a new pin.
     const hit = routeAt(e.point);
     if (hit) selectRoute(hit);
@@ -88,7 +95,8 @@ map.on("load", async () => {
   for (const card of document.querySelectorAll(".route-card")) {
     card.addEventListener("click", () => selectRoute(card.dataset.route));
   }
-  setStatus("Tap the map where you're starting.");
+  addFollowLayers();
+  if (!startViewerFromURL()) setStatus("Tap the map where you're starting.");
 });
 
 // ---- Basemap and lamps ----------------------------------------------------------
@@ -174,8 +182,8 @@ function addStarLayers() {
   });
 }
 
-// Dead lamps use the mockup's "light out" ring; unmatched 311 reports use its
-// coral "report" marker.
+// Dead lamps use the mockup's "light out" ring. 311 reports that didn't match a
+// lamp (dead_lamps.json "unmatched") aren't drawn: routing ignores them too.
 function addOutageLayers() {
   map.addLayer({
     id: "dead-stars",
@@ -189,35 +197,6 @@ function addOutageLayers() {
       "circle-stroke-width": 1.5,
     },
   });
-  map.addLayer({
-    id: "unmatched-ring",
-    type: "circle",
-    source: "unmatched-outages",
-    paint: {
-      "circle-color": "rgba(0, 0, 0, 0)",
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 14, 6, 17, 9],
-      "circle-stroke-color": C.coral,
-      "circle-stroke-width": 1.5,
-      "circle-stroke-opacity": 0.5,
-    },
-  });
-  map.addLayer({
-    id: "unmatched-core",
-    type: "circle",
-    source: "unmatched-outages",
-    paint: { "circle-color": C.coral, "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 3] },
-  });
-}
-
-function unmatchedFC(dead) {
-  return {
-    type: "FeatureCollection",
-    features: (dead?.unmatched ?? []).map((u) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: u.coord },
-      properties: { case_id: u.case_id, opened: u.opened },
-    })),
-  };
 }
 
 // ---- Start/end picking ----------------------------------------------------------
@@ -416,12 +395,21 @@ function addRouteLayers() {
     });
   }
 
+  // Dark stretches: a deep indigo core in a muted periwinkle edge, so the route
+  // reads as going dark there instead of picking up another warm color.
+  map.addLayer({
+    id: "dark-gaps-edge",
+    type: "line",
+    source: "dark-gaps",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": C.darkEdge, "line-width": 9, "line-opacity": 0.9 },
+  });
   map.addLayer({
     id: "dark-gaps",
     type: "line",
     source: "dark-gaps",
-    layout: { "line-cap": "round" },
-    paint: { "line-color": C.coral, "line-width": 6, "line-opacity": 0.9 },
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": C.darkCore, "line-width": 5 },
   });
   map.addLayer({
     id: "constellation-lines",

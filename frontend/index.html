@@ -7,7 +7,6 @@
   <!-- Fetch data and open basemap connections before app.js runs. Keep URLs in sync with app.js. -->
   <link rel="preload" href="../data/lamps.geojson" as="fetch" crossorigin>
   <link rel="preload" href="../data/dead_lamps.json" as="fetch" crossorigin>
-  <link rel="preload" href="../mocks/route_response.json" as="fetch" crossorigin>
   <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
   <link rel="preconnect" href="https://tiles.basemaps.cartocdn.com" crossorigin>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -31,7 +30,7 @@
       <h1>Find the route that <em>shines brightest.</em></h1>
     </div>
 
-    <div class="section">
+    <div class="section plan-only">
       <div class="fields">
         <div class="field">
           <span class="pin pin-from-swatch"></span>
@@ -69,10 +68,83 @@
         <p id="note" class="route-note"></p>
         <button id="reset" type="button" class="link">Start over</button>
       </div>
+      <div class="start-row">
+        <button id="start-btn" type="button" class="btn btn-primary">Start walking</button>
+      </div>
+    </div>
+
+    <!-- Following mode: walking the chosen route (follow.js) -->
+    <div id="follow" class="section progress-panel">
+      <p class="eyebrow" id="follow-title">Walking the brightest route</p>
+      <div class="progress">
+        <div class="progress-top"><span class="pct" id="follow-pct">0%</span><span id="follow-left"></span></div>
+        <span class="track big"><span class="fill" id="follow-fill"></span></span>
+      </div>
+      <p class="eta" id="follow-eta"></p>
+      <p class="gap-note" id="follow-gap"></p>
+
+      <div id="follow-off" class="alert" hidden>
+        <span>You're off the route.</span>
+        <button id="reroute-btn" type="button" class="link">Reroute from here</button>
+      </div>
+
+      <div id="follow-live">
+        <p id="share-live" class="live-note" hidden><span class="live-dot"></span>Sharing your location live</p>
+        <div class="follow-actions">
+          <button id="share-btn" type="button" class="btn btn-primary">Share my walk</button>
+          <button id="stop-btn" type="button" class="btn btn-ghost">Stop</button>
+        </div>
+      </div>
+      <div id="follow-done" hidden>
+        <p class="arrived">You made it. <em>Nice walk.</em></p>
+        <div class="follow-actions">
+          <button id="done-btn" type="button" class="btn btn-primary">Done</button>
+        </div>
+      </div>
+      <p class="gps-note" id="follow-gps" aria-live="polite"></p>
+    </div>
+
+    <!-- Viewer: someone else's shared walk (follow.js) -->
+    <div id="viewer" class="section progress-panel">
+      <p class="eyebrow">Live walk</p>
+      <h2 id="viewer-title">Loading…</h2>
+      <p class="viewer-route" id="viewer-route"></p>
+      <p class="viewer-status" id="viewer-status" aria-live="polite"></p>
+      <div class="progress">
+        <div class="progress-top"><span class="pct" id="viewer-pct">0%</span><span id="viewer-left"></span></div>
+        <span class="track big"><span class="fill" id="viewer-fill"></span></span>
+      </div>
+      <p class="eta" id="viewer-eta"></p>
+      <p class="gap-note" id="viewer-gap"></p>
+      <div class="follow-actions">
+        <button id="viewer-center" type="button" class="btn btn-ghost">Center on walker</button>
+        <a class="link" href="./">Plan your own walk</a>
+      </div>
     </div>
   </aside>
 
+  <dialog id="share-dialog" aria-labelledby="share-title">
+    <h2 id="share-title">Share your walk</h2>
+    <p class="share-sub">Anyone with this link can see where you are on this walk until you stop or arrive.</p>
+    <div class="share-link">
+      <input id="share-url" type="text" readonly aria-label="Share link">
+      <button id="share-copy" type="button" class="btn btn-primary">Copy</button>
+    </div>
+    <div class="share-grid">
+      <button type="button" data-share="messages"><span class="dot" style="--d: var(--mint)"></span>Messages</button>
+      <button type="button" data-share="whatsapp"><span class="dot" style="--d: #5fd38a"></span>WhatsApp</button>
+      <button type="button" data-share="gmail"><span class="dot" style="--d: var(--coral)"></span>Gmail</button>
+      <button type="button" data-share="email"><span class="dot" style="--d: var(--sky)"></span>Email</button>
+      <button type="button" data-share="slack"><span class="dot" style="--d: var(--lilac)"></span>Slack</button>
+      <button type="button" data-share="instagram"><span class="dot" style="--d: var(--rose)"></span>Instagram</button>
+      <button type="button" data-share="more"><span class="dot" style="--d: var(--butter)"></span>More…</button>
+    </div>
+    <p id="share-toast" class="share-toast" aria-live="polite"></p>
+    <form method="dialog"><button class="link">Done</button></form>
+  </dialog>
+
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="app.js"></script>
+  <script src="follow.js"></script>
 </body>
 </html>

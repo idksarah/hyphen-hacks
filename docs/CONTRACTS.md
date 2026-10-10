@@ -190,6 +190,54 @@ Errors return `{"error": "<code>", "message": "<human text>"}`:
 
 Returns `{"ok": true, "lamps": 41230, "dead": 312, "built_at": "2026-10-10T18:00:00Z"}`, with the lamp count from the graph build, the dead count from the loaded file, and when `graph.pkl` was built. The frontend can use it to show a "backend offline" banner.
 
+## Contract 5: Live walk sharing (Sarah → frontend)
+
+Same server as Contract 4. A walker shares the route they're following and posts GPS updates; anyone with the link can watch. Shares live in server memory: they're lost on restart, expire 12 h after the last update, and stay viewable for 1 h after the walk ends.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/shares` | `{route, route_name, from_label, to_label}` | 201 `{id, token}` |
+| POST | `/shares/{id}/location` | `{token, coord, accuracy_m, progress_m}` | `{ok: true}` |
+| POST | `/shares/{id}/route` | `{token, route, route_name}` (walker rerouted; progress resets) | `{ok: true}` |
+| POST | `/shares/{id}/end` | `{token, arrived}` | `{ok: true}` |
+| GET | `/shares/{id}` | — | share view (below) |
+
+- `route` is a Contract 4 route object exactly as `/route` returned it; `route_name` is `"lit"` or `"shortest"`. Labels are optional strings (≤ 80 chars), e.g. `"Near Market St"`.
+- `id` goes in the share link (`/frontend/?follow=<id>`). `token` is secret: only the walker's page keeps it, and every write needs it.
+- `coord` is `[lon, lat]` inside SF; `accuracy_m` may be `null`; `progress_m` is meters walked along `route` (clamped to `length_m`).
+
+Share view:
+
+```json
+{
+  "id": "QJhBYTDDcSDH",
+  "status": "active",
+  "route_name": "lit",
+  "from_label": "Near Market St",
+  "to_label": "Near Bryant St",
+  "route": { "coords": [[-122.41942, 37.77485], [-122.41075, 37.75922]], "length_m": 2334.2, "...": "rest of the Contract 4 route object" },
+  "started_at": "2026-10-10T21:30:00Z",
+  "updated_at": "2026-10-10T21:36:12Z",
+  "ended_at": null,
+  "location": { "coord": [-122.41501, 37.76998], "accuracy_m": 6.0, "progress_m": 814.0, "updated_at": "2026-10-10T21:36:12Z" }
+}
+```
+
+- `status` is `"active"`, `"arrived"` (walker reached the end), or `"ended"` (walker stopped). `location` is `null` until the first fix.
+- The walker posts at most every 3 s while moving and re-sends its last fix every 10 s when standing still, so a view not updated for 60 s means the walker's phone has gone quiet.
+
+Errors use the Contract 4 shape:
+
+| Status | `error` | When |
+|---|---|---|
+| 400 | `bad_params` | Missing/invalid fields, or a coordinate outside SF |
+| 403 | `bad_token` | Wrong token on a write |
+| 404 | `share_not_found` | Unknown or expired id |
+| 409 | `share_ended` | Location or route update after the walk ended |
+| 503 | `too_many_shares` | Server holds 1,000 live shares already |
+
+The server also serves the app itself at `/frontend/` (plus `/data/lamps.geojson`, `/data/dead_lamps.json`, `/mocks/`), so the whole app runs on one origin. The frontend uses the same origin for API calls, except on the `python3 -m http.server 5173` dev server, where it calls port 8000 on the same host.
+
 ## Working async
 
 Neither person waits on the other: each side builds against a stand-in until the real thing lands, then swaps it in without code changes.
@@ -228,3 +276,4 @@ Sarah's lane:
 - 2026-10-10 (Sarah): Defined the edge `cost` formula in Contract 3. A dark meter costs 1 + α times a lit one, and β × gap² penalizes long dark runs, so at the defaults (α = 3, β = 0.02) a 150 m gap adds the equivalent of 450 m of walking. The defaults may change after tuning on real lamps; the API params and their ranges don't.
 - 2026-10-10 (Sarah): Default α is now 2.0 (was 3.0) and default β 0.005 (was 0.02), tuned on 120 random 0.8–3 km trips with real lamps (`backend/tune.py`). Past α = 2 the lit share barely improves (+0.25 → +0.27) while the median detour grows from 6% to 10%, and β mostly lengthens detours without removing long gaps. Ranges and types are unchanged. The frontend's slider default moves from 30 to 20 to match.
 - 2026-10-10 (Sarah): Lamp brightness now follows the inverse square law instead of a hard 20 m radius. Each lamp head sits 9 m up and gives I / d² at a ground point d meters from the head; nearby lamps add, and a sample is lit when the sum reaches the level one lamp alone gives 20 m away. A lone lamp still lights 20 m, but overlapping lamps now fill in the gaps between them, so citywide `lit_frac` rises from 0.40 to 0.52. All lamps get the same intensity since the lamp data has no wattage. Field names, types and units are unchanged; `lamp_ids` still means lamps within 20 m. α = 2.0 / β = 0.005 re-checked with `backend/tune.py` and kept.
+- 2026-10-10 (Sarah): Added Contract 5 (live walk sharing) for the new route-following mode: `/shares` endpoints, in-memory with expiry. The API server now also serves the frontend, so `API_URL` is the page's own origin except on the :5173 dev server. Purely additive; Contract 4 is unchanged.

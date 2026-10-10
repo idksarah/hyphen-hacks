@@ -19,6 +19,7 @@
   --sky: #8ccaff;
   --lilac: #b9a0ff;
   --gray: #a39fae;           /* the shortest, least-lit route */
+  --dark-gap: #8f9be0;       /* text for unlit stretches; map uses a deeper indigo */
   --beam: linear-gradient(90deg, var(--rose), var(--coral), var(--tangerine), var(--butter), var(--mint), var(--sky), var(--lilac));
   --ink: #1b1722;
 
@@ -329,3 +330,167 @@ input[type="range"]::-moz-range-thumb {
 }
 .maplibregl-ctrl-attrib a { color: var(--text-secondary); }
 .maplibregl-ctrl-attrib-button { filter: invert(0.9); }
+
+/* ---- modes: find (default) / follow / view ------------------------------------ */
+#follow, #viewer { display: none; }
+body[data-mode="follow"] #follow,
+body[data-mode="view"] #viewer { display: block; }
+body[data-mode="follow"] .plan-only,
+body[data-mode="view"] .plan-only,
+body[data-mode="follow"] #status,
+body[data-mode="view"] #status,
+body[data-mode="view"] #routes,
+body[data-mode="follow"] .start-row,
+body[data-mode="follow"] #reset { display: none; }
+body[data-mode="follow"] .route-card,
+body[data-mode="follow"] .route-footer { pointer-events: none; }
+body[data-mode="follow"] .route-card[aria-pressed="false"] { display: none; }
+body[data-mode="follow"] h1,
+body[data-mode="view"] h1 { display: none; }
+
+/* On phones the panel sits under the map: put progress right below it. */
+@media (max-width: 760px) {
+  body[data-mode="follow"] #routes { display: none; }
+}
+
+/* buttons */
+.btn {
+  padding: 11px 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--night-3);
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn:hover { background: var(--night-4); }
+.btn:disabled { opacity: 0.6; cursor: progress; }
+.btn-primary { background: var(--butter); border-color: var(--butter); color: var(--ink); }
+.btn-primary:hover { background: var(--text); border-color: var(--text); }
+.btn-ghost { background: transparent; }
+
+.start-row { padding: 0 24px 20px; }
+.start-row .btn { width: 100%; }
+
+/* progress panels */
+.eyebrow {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+#viewer h2 {
+  margin: 6px 0 2px;
+  font-weight: 400;
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+.viewer-route { margin: 0; color: var(--text-secondary); font-size: 0.9rem; }
+
+.progress { margin-top: 16px; }
+.progress-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; color: var(--text-secondary); font-size: 0.9rem; }
+.progress-top .pct { font-size: 2rem; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+
+.track.big { display: block; height: 6px; margin-top: 10px; border-radius: 6px; background: var(--night-4); overflow: hidden; }
+.track.big .fill { display: block; height: 100%; width: 0; background: var(--beam); transition: width 700ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+.eta { margin: 12px 0 0; }
+.gap-note { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+.gap-note.warn { color: var(--dark-gap); }
+
+.alert {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--coral);
+  border-radius: 10px;
+  color: var(--coral);
+}
+.alert[hidden] { display: none; }
+.alert .link { color: var(--coral); }
+
+.follow-actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.follow-actions .btn-primary { flex: 1; }
+
+.live-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 -6px; color: var(--mint); font-size: 0.9rem; }
+.live-note[hidden] { display: none; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); animation: pulse 1.6s ease-out infinite; }
+
+.arrived { margin: 18px 0 0; font-size: 1.3rem; }
+.arrived em { font-style: italic; background: var(--beam); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.gps-note { margin: 14px 0 0; color: var(--text-faint); font-size: 0.82rem; }
+.gps-note:empty { display: none; }
+
+.viewer-status { margin: 12px 0 0; color: var(--text-secondary); }
+.viewer-status[data-tone="live"] { color: var(--mint); }
+.viewer-status[data-tone="ok"] { color: var(--mint); }
+.viewer-status[data-tone="warn"] { color: var(--coral); }
+
+/* the walker's position */
+.marker-me {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sky);
+  border: 2px solid var(--text);
+  box-shadow: 0 0 0 0 rgba(140, 202, 255, 0.6);
+  animation: pulse-ring 2s ease-out infinite;
+}
+.marker-from.view, .marker-to.view { cursor: default; }
+
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(140, 202, 255, 0.6); }
+  100% { box-shadow: 0 0 0 18px rgba(140, 202, 255, 0); }
+}
+
+/* share sheet */
+#share-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--night-2);
+  color: var(--text);
+}
+#share-dialog::backdrop { background: rgba(10, 6, 14, 0.7); }
+#share-dialog h2 { margin: 0; font-weight: 500; font-size: 1.3rem; }
+.share-sub { margin: 6px 0 16px; color: var(--text-secondary); font-size: 0.9rem; }
+
+.share-link { display: flex; gap: 8px; }
+.share-link input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--night-1);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.share-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 16px; }
+.share-grid button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--night-3);
+  cursor: pointer;
+  text-align: left;
+}
+.share-grid button:hover { background: var(--night-4); }
+.share-grid button[hidden] { display: none; }
+.share-grid .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--d); }
+
+.share-toast { min-height: 1.5em; margin: 12px 0 0; color: var(--mint); font-size: 0.9rem; }
+#share-dialog form { display: flex; justify-content: flex-end; margin: 4px 0 0; }
