@@ -1,0 +1,19 @@
+# Built by backend/build_graph.py
+data/graph.pkl
+
+# Raw downloads used to build lamps/dead_lamps
+data/raw/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
