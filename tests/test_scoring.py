@@ -29,7 +29,7 @@ def street(length, lamps_at, lamp_offset=0.0):
 
 
 def test_samples_cover_the_street_exactly():
-    offsets, cell = sample_offsets(100.0)
+    offsets, cell = sample_offsets(100.0) 
     assert cell <= STEP_M
     assert len(offsets) * cell == pytest.approx(100.0)
     assert offsets[0] == pytest.approx(cell / 2)

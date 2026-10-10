@@ -49,6 +49,38 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
 
+// On wide screens the panel floats over the map's left side. Pad the map by its
+// width so fitBounds/easeTo/flyTo center things in the part you can see (no
+// padding once the panel is closed down to its header).
+const panelEl = document.getElementById("panel");
+function syncMapPadding() {
+  const floating = getComputedStyle(panelEl).position === "absolute";
+  const open = !panelEl.classList.contains("collapsed");
+  const left = floating && open ? panelEl.getBoundingClientRect().right : 0;
+  map.setPadding({ top: 0, right: 0, bottom: 0, left });
+}
+
+// The toggle in the panel's header closes it to just that row, or reopens it.
+// Remembered per browser; storage can be unavailable, so that's best-effort.
+const PANEL_KEY = "polaris.panelClosed";
+const panelToggle = document.getElementById("panel-toggle");
+function setPanelOpen(open) {
+  panelEl.classList.toggle("collapsed", !open);
+  document.body.classList.toggle("panel-closed", !open);
+  panelToggle.setAttribute("aria-expanded", open);
+  const label = open ? "Hide panel" : "Show panel";
+  panelToggle.setAttribute("aria-label", label);
+  panelToggle.title = label;
+  try { localStorage.setItem(PANEL_KEY, open ? "0" : "1"); } catch {}
+  syncMapPadding();
+}
+panelToggle.addEventListener("click", () => setPanelOpen(panelEl.classList.contains("collapsed")));
+let panelStartsClosed = false;
+try { panelStartsClosed = localStorage.getItem(PANEL_KEY) === "1"; } catch {}
+setPanelOpen(!panelStartsClosed);
+map.fitBounds(SF_BOUNDS, { animate: false });
+window.addEventListener("resize", syncMapPadding);
+
 // Start downloading data now, in parallel with the basemap, instead of waiting
 // for its "load" event. index.html preloads the same URLs, so these reuse that.
 const lampsPromise = fetch(LAMPS_URL).then((r) => {

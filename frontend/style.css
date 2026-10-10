@@ -47,38 +47,53 @@ button { font: inherit; color: inherit; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* Sidebar docked beside the map; on phones the map sits above the sidebar. */
-body {
-  display: grid;
-  grid-template-columns: var(--panel-w) 1fr;
-  grid-template-areas: "panel map";
-  height: 100vh;
-}
+/* The map fills the window and the panel floats over its top-left corner, only
+   as tall as its content (scrolling if it would outgrow the window). On phones
+   the map sits above the panel instead. */
+:root { --panel-inset: 16px; }
 
 #map {
-  grid-area: map;
-  min-height: 0;
+  position: fixed;
+  inset: 0;
   background: var(--night-1);
 }
 
 #panel {
-  grid-area: panel;
+  position: absolute;
+  top: var(--panel-inset);
+  left: var(--panel-inset);
+  z-index: 2;
+  width: var(--panel-w);
+  max-height: calc(100vh - 2 * var(--panel-inset));
+  max-height: calc(100dvh - 2 * var(--panel-inset));
   overflow-y: auto;
   background: var(--night-2);
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 @media (max-width: 760px) {
   body {
-    grid-template-columns: 1fr;
+    display: grid;
     grid-template-rows: 58vh auto;
-    grid-template-areas: "map" "panel";
     height: auto;
   }
+  #map { position: relative; inset: auto; }
+  /* Phones: closing the panel hands its space to the map. */
+  body.panel-closed { grid-template-rows: 1fr auto; height: 100vh; height: 100dvh; }
+  #panel.collapsed { width: auto; }
+  #panel.collapsed .panel-toggle svg { transform: rotate(90deg); }
+  .panel-toggle svg { transform: rotate(-90deg); }
   #panel {
-    border-right: 0;
-    border-top: 1px solid var(--border);
+    position: static;
+    width: auto;
+    max-height: none;
     overflow: visible;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
   }
 }
 
@@ -88,6 +103,8 @@ body {
 }
 
 .section:last-child { border-bottom: 0; }
+/* Sections that can end the floating card: the card's own border closes them. */
+#status, #follow, #viewer { border-bottom: 0; }
 
 .brand {
   display: flex;
@@ -96,6 +113,30 @@ body {
 }
 
 .logo { width: 26px; height: 26px; }
+
+/* Hide/show the panel. Closed, only the header row stays, so the toggle stays put. */
+.panel-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: -6px -8px -6px auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.panel-toggle:hover { background: var(--night-3); border-color: var(--border); color: var(--text); }
+.panel-toggle svg { transition: transform 200ms ease; }
+
+#panel.collapsed { width: auto; }
+#panel.collapsed > :not(.panel-head) { display: none; }
+#panel.collapsed .panel-head { padding: 12px 16px 12px 20px; border-bottom: 0; }
+#panel.collapsed .brand { gap: 10px; }
+#panel.collapsed .panel-toggle { margin-left: 8px; }
+#panel.collapsed .panel-toggle svg { transform: rotate(180deg); }
 
 .wordmark {
   font-weight: 600;
