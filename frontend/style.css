@@ -49,6 +49,20 @@ html, body {
   color: var(--muted);
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggle input {
+  margin: 0;
+  accent-color: var(--star);
+}
+
 #card #status {
   margin-top: 8px;
   color: var(--text);

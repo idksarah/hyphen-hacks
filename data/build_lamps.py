@@ -13,15 +13,12 @@ Standard library only.
 
 import argparse
 import json
-import ssl
-import sys
 import math
-import time
-import urllib.parse
-import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+
+from http_util import get_json, post_json
 
 DATA_DIR = Path(__file__).resolve().parent
 RAW_DIR = DATA_DIR / "raw"
@@ -36,7 +33,6 @@ SFPUC_LAYER = (
 PAGE_SIZE = 2000  # layer's maxRecordCount
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-USER_AGENT = "safe-light-constellations/0.1 (hackathon project; github.com/idksarah/hyphen-hacks)"
 
 # SF bounding box from the contract: lon -122.52..-122.35, lat 37.70..37.84
 BBOX = (-122.52, 37.70, -122.35, 37.84)
@@ -47,47 +43,6 @@ DEDUPE_M = 5.0
 # Every lamp carries the same keys; contract says missing values are null.
 EXTRA_KEYS = ("pole_number", "pole_type", "material", "street")
 
-
-def ssl_context():
-    """Verified TLS context. python.org macOS installs ship without a CA bundle
-    until "Install Certificates.command" is run, so fall back to the system one."""
-    ctx = ssl.create_default_context()
-    if not ctx.get_ca_certs() and Path("/etc/ssl/cert.pem").exists():
-        ctx = ssl.create_default_context(cafile="/etc/ssl/cert.pem")
-    return ctx
-
-
-SSL_CTX = ssl_context()
-
-
-def get_json(url, params, retries=3):
-    full = f"{url}?{urllib.parse.urlencode(params)}"
-    for attempt in range(1, retries + 1):
-        try:
-            with urllib.request.urlopen(full, timeout=60, context=SSL_CTX) as resp:
-                body = json.load(resp)
-            if "error" in body:
-                raise RuntimeError(body["error"])
-            return body
-        except Exception as e:  # network blips, ArcGIS throttling
-            if attempt == retries:
-                raise
-            print(f"  retry {attempt} after error: {e}", file=sys.stderr)
-            time.sleep(2 * attempt)
-
-
-def post_json(url, data, retries=3):
-    body = urllib.parse.urlencode(data).encode()
-    req = urllib.request.Request(url, data=body, headers={"User-Agent": USER_AGENT})
-    for attempt in range(1, retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=180, context=SSL_CTX) as resp:
-                return json.load(resp)
-        except Exception as e:  # Overpass is often busy (429/504)
-            if attempt == retries:
-                raise
-            print(f"  retry {attempt} after error: {e}", file=sys.stderr)
-            time.sleep(10 * attempt)
 
 
 def download_sfpuc():

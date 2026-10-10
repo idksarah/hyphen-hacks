@@ -2,12 +2,12 @@
 
 // Served from the repo root (python3 -m http.server), so data/ is one level up.
 const LAMPS_URL = "../data/lamps.geojson";
+const DEAD_URL = "../data/dead_lamps.json"; // optional; skipped if missing
 const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
-// Contract 4: Sarah's API. If it's not running, fall back to a mock response:
-// Sarah's mocks/ copy first, then our temporary one in frontend/dev/.
+// Contract 4: Sarah's API. If it's not running, fall back to her mock response.
 const API_URL = "http://localhost:8000";
-const MOCK_URLS = ["../mocks/route_response.json", "dev/route_response.json"];
+const MOCK_URL = "../mocks/route_response.json";
 
 // Contract bounding box: lon -122.52..-122.35, lat 37.70..37.84
 const SF_BBOX = { minLon: -122.52, minLat: 37.70, maxLon: -122.35, maxLat: 37.84 };
@@ -15,8 +15,11 @@ const SF_BOUNDS = [[SF_BBOX.minLon, SF_BBOX.minLat], [SF_BBOX.maxLon, SF_BBOX.ma
 
 const STAR_COLOR = "#ffd88a";
 
+const DEAD_COLOR = "#ff6b6b";
+
 const statusEl = document.getElementById("status");
 const resetBtn = document.getElementById("reset");
+const outagesBox = document.getElementById("outages");
 
 const map = new maplibregl.Map({
   container: "map",
@@ -30,19 +33,33 @@ map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-ri
 map.on("load", async () => {
   dimBasemap();
 
-  const lamps = await fetch(LAMPS_URL).then((r) => {
-    if (!r.ok) throw new Error(`lamps.geojson: HTTP ${r.status}`);
-    return r.json();
-  });
+  const [lamps, dead] = await Promise.all([
+    fetch(LAMPS_URL).then((r) => {
+      if (!r.ok) throw new Error(`lamps.geojson: HTTP ${r.status}`);
+      return r.json();
+    }),
+    fetch(DEAD_URL).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+
+  // Contract 2: only the set of dead[].lamp_id matters for marking lamps.
+  const deadIds = new Set(dead?.dead.map((d) => d.lamp_id) ?? []);
+  for (const f of lamps.features) f.properties.dead = deadIds.has(f.properties.id);
+
   document.getElementById("lamp-count").textContent =
-    `${lamps.features.length.toLocaleString()} streetlights`;
+    `${lamps.features.length.toLocaleString()} streetlights` +
+    (dead ? ` · ${deadIds.size} reported out` : "");
 
   map.addSource("lamps", { type: "geojson", data: lamps });
+  map.addSource("unmatched-outages", { type: "geojson", data: unmatchedFC(dead) });
   addStarLayers();
+  addDeadStarLayers();
   addRouteLayers();
 
   map.on("click", (e) => pickPoint([e.lngLat.lng, e.lngLat.lat]));
   resetBtn.addEventListener("click", resetPicks);
+  outagesBox.addEventListener("change", () => {
+    if (picks.from && picks.to) requestRoute();
+  });
   setStatus("Click the map to set a start point.");
 });
 
@@ -54,12 +71,14 @@ function dimBasemap() {
   }
 }
 
-// Each lamp is a soft halo plus a bright core; both grow with zoom.
+// Each working lamp is a soft halo plus a bright core; both grow with zoom.
 function addStarLayers() {
+  const alive = ["!", ["get", "dead"]];
   map.addLayer({
     id: "lamp-halo",
     type: "circle",
     source: "lamps",
+    filter: alive,
     paint: {
       "circle-color": STAR_COLOR,
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 14, 6, 17, 16],
@@ -71,12 +90,54 @@ function addStarLayers() {
     id: "lamp-core",
     type: "circle",
     source: "lamps",
+    filter: alive,
     paint: {
       "circle-color": "#fff6e0",
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 0.6, 14, 1.4, 17, 3],
       "circle-opacity": 0.9,
     },
   });
+}
+
+// Dead stars: lamps with an open outage report, drawn as dim hollow rings.
+// Reports that matched no lamp get a smaller, fainter ring.
+function addDeadStarLayers() {
+  map.addLayer({
+    id: "dead-stars",
+    type: "circle",
+    source: "lamps",
+    filter: ["get", "dead"],
+    paint: {
+      "circle-color": "rgba(0, 0, 0, 0)",
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2.5, 14, 4, 17, 7],
+      "circle-stroke-color": DEAD_COLOR,
+      "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 11, 1, 15, 1.5],
+      "circle-stroke-opacity": 0.85,
+    },
+  });
+  map.addLayer({
+    id: "unmatched-outages",
+    type: "circle",
+    source: "unmatched-outages",
+    paint: {
+      "circle-color": "rgba(0, 0, 0, 0)",
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 14, 3, 17, 5],
+      "circle-stroke-color": DEAD_COLOR,
+      "circle-stroke-width": 1,
+      "circle-stroke-opacity": 0.45,
+    },
+  });
+}
+
+function unmatchedFC(dead) {
+  return {
+    type: "FeatureCollection",
+    features: (dead?.unmatched ?? []).map((u) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: u.coord },
+      properties: { case_id: u.case_id, opened: u.opened },
+    })),
+  };
 }
 
 // ---- Start/end picking -----------------------------------------------------
@@ -162,6 +223,7 @@ async function fetchRoute(from, to) {
   const params = new URLSearchParams({
     from_lon: from.lng, from_lat: from.lat,
     to_lon: to.lng, to_lat: to.lat,
+    outages: outagesBox.checked,
   });
 
   let res;
@@ -178,10 +240,8 @@ async function fetchRoute(from, to) {
 }
 
 async function fetchMock() {
-  for (const url of MOCK_URLS) {
-    const res = await fetch(url).catch(() => null);
-    if (res?.ok) return res.json();
-  }
+  const res = await fetch(MOCK_URL).catch(() => null);
+  if (res?.ok) return res.json();
   throw new Error("Backend offline and no mock route found.");
 }
 
