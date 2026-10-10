@@ -178,7 +178,16 @@ body {
 .stop-remove:hover { color: var(--text); background: var(--night-3); }
 .stop-remove[hidden] { display: block; visibility: hidden; }
 
-.stop .results { grid-column: 2; margin: 6px 0 0; }
+/* dropdown floats over the rows below, like Google Maps, so nothing shifts */
+.stop .results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 38px;
+  right: 38px;
+  z-index: 5;
+  margin: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
 
 .stop.dragging { opacity: 0.4; }
 .stop.drop-target .stop-form input { border-color: var(--butter); }
@@ -263,6 +272,13 @@ body {
   display: block;
   color: var(--text-faint);
   font-size: 0.85rem;
+}
+
+.results .results-location {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--sky);
 }
 
 .results-msg {

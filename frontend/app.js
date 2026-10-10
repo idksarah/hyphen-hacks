@@ -285,6 +285,17 @@ function stopRow(stop, i) {
     if (e.key === "Escape") showResults(stop, null);
   });
 
+  // Only the starting point offers "Your location", like Google Maps.
+  if (i === 0) {
+    input.addEventListener("focus", () => showLocationOption(stop));
+    input.addEventListener("input", () => {
+      if (isShowingLocationOption(stop)) showResults(stop, null);
+    });
+    input.addEventListener("blur", () => {
+      if (isShowingLocationOption(stop)) showResults(stop, null);
+    });
+  }
+
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "stop-remove";
@@ -445,6 +456,60 @@ function inSF([lon, lat]) {
          lat >= SF_BBOX.minLat && lat <= SF_BBOX.maxLat;
 }
 
+// ---- Current location ------------------------------------------------------------
+
+function showLocationOption(stop) {
+  const list = stopRowEl(stop)?.querySelector(".results");
+  if (!list || (!list.hidden && list.dataset.mode !== "location")) return; // search results win
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "results-location";
+  btn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <circle cx="12" cy="12" r="4" fill="currentColor"/>
+    <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+    <path d="M12 1v3M12 20v3M1 12h3M20 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  btn.append("Your location");
+  // Keep focus in the input so its blur handler doesn't hide this before the click lands.
+  btn.addEventListener("pointerdown", (e) => e.preventDefault());
+  btn.addEventListener("click", () => useCurrentLocation(stop));
+  const li = document.createElement("li");
+  li.append(btn);
+  list.replaceChildren(li);
+  list.dataset.mode = "location";
+  list.hidden = false;
+}
+
+function isShowingLocationOption(stop) {
+  const list = stopRowEl(stop)?.querySelector(".results");
+  return list && !list.hidden && list.dataset.mode === "location";
+}
+
+function useCurrentLocation(stop) {
+  showResults(stop, null);
+  stopRowEl(stop)?.querySelector("input")?.blur();
+  if (!("geolocation" in navigator)) return setStatus("This browser can't share your location.");
+
+  setStatus("Finding your location…");
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => {
+      const lonLat = [coords.longitude, coords.latitude];
+      if (!inSF(lonLat)) {
+        return setStatus("You're outside San Francisco, so we can't route from here. Search for a start instead.");
+      }
+      setStopPoint(stop, lonLat, "Your location");
+      if (stops.filter((s) => s.lonLat).length < 2) {
+        map.flyTo({ center: lonLat, zoom: Math.max(map.getZoom(), 15) });
+      }
+    },
+    (err) => {
+      setStatus(err.code === err.PERMISSION_DENIED
+        ? "Location access is off. Allow it in your browser, or search for a start instead."
+        : "Couldn't find your location. Search for a start or tap the map instead.");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+  );
+}
+
 // ---- Address search (Nominatim) -------------------------------------------------
 
 let nextGeocodeAt = 0; // Nominatim allows one request per second
@@ -494,6 +559,7 @@ function placeLabel(r) {
 function showResults(stop, results) {
   const list = stopRowEl(stop)?.querySelector(".results");
   if (!list) return;
+  delete list.dataset.mode;
   list.hidden = results === null;
   if (results === null) return list.replaceChildren();
 
