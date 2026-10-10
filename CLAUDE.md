@@ -14,6 +14,7 @@ Contract changes follow the rules in `docs/CONTRACTS.md` ("Changing a contract")
 ## Notes
 
 - Python env: `.venv/` (osmnx 2.1.1, networkx 3.7). Pin these in `backend/requirements.txt`, since `graph.pkl` breaks across versions.
+- Build the scored graph: `.venv/bin/python backend/build_graph.py` (~100 s, ~1.4 GB RAM; writes `data/graph.pkl`). Scoring logic lives in `backend/scoring.py`; tests: `.venv/bin/python -m pytest tests/test_scoring.py`.
 - osmnx caches Overpass/Nominatim downloads in `cache/` relative to the working directory (`tests/cache/` so far); gitignored.
 - SFPUC lamp IDs are `sfpuc:<assetnum>` (e.g. `sfpuc:A10P0001`), not OBJECTID.
 - `mocks/route_response.json` uses real streets and real lamps from `data/lamps.geojson`; regenerate it with `.venv/bin/python backend/make_mock.py` if the route shape or lamp IDs change.
