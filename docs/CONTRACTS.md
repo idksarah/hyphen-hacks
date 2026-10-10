@@ -94,7 +94,7 @@ Claire never reads this file; it is listed so the API's inputs are pinned down. 
 | Edge attribute | Type | Meaning |
 |---|---|---|
 | `length` | float, m | Edge length (osmnx default) |
-| `lit_frac` | float, 0–1 | Share of 3 m samples within 20 m of a lamp |
+| `lit_frac` | float, 0–1 | Share of 3 m samples whose summed lamp brightness reaches the lit threshold (inverse-square model, see change log) |
 | `max_gap` | float, m | Longest dark run inside the edge |
 | `lead_dark`, `trail_dark` | float, m | Dark run at the edge's start and end, for merging gaps across intersections |
 | `lamp_ids` | list[str] | Lamps within 20 m, ordered along the edge u→v |
@@ -227,3 +227,4 @@ Sarah's lane:
 - 2026-10-10 (Claire): SFPUC lamp IDs use `assetnum` instead of `OBJECTID`, e.g. `sfpuc:A10P0001` (the numeric `sfpuc:48213` in the examples above is just illustrative). The source is the [SFPUC Streetlights layer](https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/SFPUC_Streetlights/FeatureServer/0), where `objectid` is system-maintained and can be renumbered on republish; `assetnum` is SFPUC's asset tag (non-null and unique across all 24,802 lamps). Type is still string; Sarah's code reads `id` only.
 - 2026-10-10 (Sarah): Defined the edge `cost` formula in Contract 3. A dark meter costs 1 + α times a lit one, and β × gap² penalizes long dark runs, so at the defaults (α = 3, β = 0.02) a 150 m gap adds the equivalent of 450 m of walking. The defaults may change after tuning on real lamps; the API params and their ranges don't.
 - 2026-10-10 (Sarah): Default α is now 2.0 (was 3.0) and default β 0.005 (was 0.02), tuned on 120 random 0.8–3 km trips with real lamps (`backend/tune.py`). Past α = 2 the lit share barely improves (+0.25 → +0.27) while the median detour grows from 6% to 10%, and β mostly lengthens detours without removing long gaps. Ranges and types are unchanged. The frontend's slider default moves from 30 to 20 to match.
+- 2026-10-10 (Sarah): Lamp brightness now follows the inverse square law instead of a hard 20 m radius. Each lamp head sits 9 m up and gives I / d² at a ground point d meters from the head; nearby lamps add, and a sample is lit when the sum reaches the level one lamp alone gives 20 m away. A lone lamp still lights 20 m, but overlapping lamps now fill in the gaps between them, so citywide `lit_frac` rises from 0.40 to 0.52. All lamps get the same intensity since the lamp data has no wattage. Field names, types and units are unchanged; `lamp_ids` still means lamps within 20 m. α = 2.0 / β = 0.005 re-checked with `backend/tune.py` and kept.

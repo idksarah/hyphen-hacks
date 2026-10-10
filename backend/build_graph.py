@@ -27,6 +27,7 @@ from shapely.geometry import LineString
 from scoring import (
     DEFAULT_ALPHA,
     DEFAULT_BETA,
+    LAMP_HEIGHT_M,
     LIGHT_R_M,
     STEP_M,
     LampIndex,
@@ -161,6 +162,8 @@ def main():
         lamps_sha256=hashlib.sha256(LAMPS.read_bytes()).hexdigest(),
         step_m=STEP_M,
         light_r_m=LIGHT_R_M,
+        light_model="inverse_square",
+        lamp_height_m=LAMP_HEIGHT_M,
         alpha=DEFAULT_ALPHA,
         beta=DEFAULT_BETA,
         osmnx_version=ox.__version__,

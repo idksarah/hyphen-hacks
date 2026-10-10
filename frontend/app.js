@@ -1,4 +1,4 @@
-// Asterism (Safe-Light Constellations) frontend. See docs/CONTRACTS.md for data
+// Polaris (Safe-Light Constellations) frontend. See docs/CONTRACTS.md for data
 // shapes; visual design follows Sarah's mockup in mocks/index.html.
 
 // Served from the repo root (python3 -m http.server), so data/ is one level up.

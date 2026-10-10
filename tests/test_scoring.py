@@ -7,6 +7,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from scoring import (  # noqa: E402
+    LAMP_HEIGHT_M,
+    LIT_E,
     LIGHT_R_M,
     STEP_M,
     EdgeScore,
@@ -98,3 +100,31 @@ def test_cost_matches_contract_formula():
     assert edge_cost(100.0, 0.5, 50.0, alpha=3.0, beta=0.02) == pytest.approx(100 * 2.5 + 0.02 * 2500)
     # darker is always more expensive
     assert edge_cost(100.0, 0.2, 80.0) > edge_cost(100.0, 0.8, 20.0)
+
+
+def test_single_lamp_lights_exactly_light_radius():
+    idx = LampIndex(["sfpuc:L0"], [(0.0, 0.0)])
+    e = idx.illuminance([(0.0, 0.0), (LIGHT_R_M - 0.01, 0.0), (LIGHT_R_M + 0.01, 0.0)])
+    assert e[1] >= LIT_E > e[2]
+    assert e[0] == pytest.approx((LIGHT_R_M**2 + LAMP_HEIGHT_M**2) / LAMP_HEIGHT_M**2)
+
+
+def test_brightness_falls_with_inverse_square_of_distance_to_lamp_head():
+    idx = LampIndex(["sfpuc:L0"], [(0.0, 0.0)])
+    r1, r2 = 10.0, 30.0
+    e1, e2 = idx.illuminance([(r1, 0.0), (r2, 0.0)])
+    assert e1 / e2 == pytest.approx((r2**2 + LAMP_HEIGHT_M**2) / (r1**2 + LAMP_HEIGHT_M**2))
+
+
+def test_overlapping_lamps_add_up():
+    # 50 m apart: each alone leaves a 10 m dark stretch between them, together they light it
+    one = LampIndex(["a"], [(0.0, 0.0)]).illuminance([(25.0, 0.0)])[0]
+    s, *_ = street(50.0, [0.0, 50.0])
+    assert one < LIT_E
+    assert 2 * one >= LIT_E
+    assert s == EdgeScore(1.0, 0.0, 0.0, 0.0)
+
+
+def test_far_lamps_are_ignored():
+    idx = LampIndex(["a"], [(0.0, 0.0)])
+    assert idx.illuminance([(500.0, 0.0)])[0] == 0.0

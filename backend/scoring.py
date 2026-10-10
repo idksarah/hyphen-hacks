@@ -1,9 +1,15 @@
 """Lighting scores for street edges and routes (Contract 3 in docs/CONTRACTS.md).
 
 Everything here works in projected meters (EPSG:32610). A street is cut into
-cells of at most STEP_M; each cell's midpoint is a sample, and a sample is lit
-when a lamp is within LIGHT_R_M of it. Each sample stands for its cell's length,
-so dark-run lengths add up exactly to the street's length.
+cells of at most STEP_M; each cell's midpoint is a sample. Each sample stands
+for its cell's length, so dark-run lengths add up exactly to the street's length.
+
+Brightness follows the inverse square law: a lamp of intensity I mounted
+LAMP_HEIGHT_M up gives E = I / (r^2 + h^2) at a ground point r meters away
+horizontally, and nearby lamps add. A sample is lit when E reaches LIT_E,
+calibrated so a single lamp alone lights out to LIGHT_R_M. All lamps get the
+same intensity (the lamp data has no wattage), so E is in relative units:
+1.0 is the threshold.
 """
 from dataclasses import dataclass
 
@@ -11,7 +17,12 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 STEP_M = 3.0
-LIGHT_R_M = 20.0
+LIGHT_R_M = 20.0      # how far one lamp alone lights the ground; also the lamp_ids radius
+LAMP_HEIGHT_M = 9.0   # typical SF streetlight pole
+LAMP_I = LIGHT_R_M**2 + LAMP_HEIGHT_M**2  # intensity that puts E = 1 at LIGHT_R_M
+LIT_E = 1.0
+E_CUTOFF_M = 80.0     # ignore lamps farther than this; each adds < 7% of LIT_E
+E_MAX_LAMPS = 32      # nearest lamps summed per sample
 DEFAULT_ALPHA = 2.0  # tuned with backend/tune.py
 DEFAULT_BETA = 0.005
 
@@ -70,25 +81,36 @@ def edge_cost(length, lit_frac, max_gap, alpha=DEFAULT_ALPHA, beta=DEFAULT_BETA)
 class LampIndex:
     """Nearest-lamp lookups over lamps in projected meters."""
 
-    def __init__(self, ids, xy, radius=LIGHT_R_M):
+    def __init__(self, ids, xy, radius=LIGHT_R_M, height=LAMP_HEIGHT_M, intensity=LAMP_I):
         self.ids = list(ids)
         self.xy = np.asarray(xy, dtype=float).reshape(-1, 2)
         self.radius = radius
+        self.height, self.intensity = height, intensity
         self.tree = cKDTree(self.xy) if len(self.ids) else None
 
     def without(self, drop_ids):
         """A copy with some lamps removed (e.g. reported outages)."""
         drop = set(drop_ids)
         keep = [i for i, lid in enumerate(self.ids) if lid not in drop]
-        return LampIndex([self.ids[i] for i in keep], self.xy[keep], self.radius)
+        return LampIndex([self.ids[i] for i in keep], self.xy[keep], self.radius, self.height, self.intensity)
+
+    def illuminance(self, points, chunk=200_000):
+        """Summed inverse-square brightness at each ground point (LIT_E = lit)."""
+        points = np.asarray(points, dtype=float).reshape(-1, 2)
+        out = np.zeros(len(points))
+        if self.tree is None:
+            return out
+        k = min(E_MAX_LAMPS, len(self.ids))
+        for i in range(0, len(points), chunk):  # bounds memory on citywide builds
+            dist, _ = self.tree.query(points[i:i + chunk], k=k, distance_upper_bound=E_CUTOFF_M)
+            dist = np.asarray(dist).reshape(len(dist), -1)
+            e = self.intensity / (dist**2 + self.height**2)  # inf distance -> 0
+            out[i:i + chunk] = e.sum(axis=1)
+        return out
 
     def lit(self, points):
-        """Boolean mask: which points have a lamp within radius."""
-        points = np.asarray(points, dtype=float).reshape(-1, 2)
-        if self.tree is None:
-            return np.zeros(len(points), dtype=bool)
-        dist, _ = self.tree.query(points, distance_upper_bound=self.radius)
-        return dist <= self.radius
+        """Boolean mask: which points are at least as bright as LIT_E."""
+        return self.illuminance(points) >= LIT_E * (1 - 1e-9)
 
     def lamps_along(self, points, offsets):
         """Ids of lamps within radius of any point, ordered by the offset where each is closest."""
