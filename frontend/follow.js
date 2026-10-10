@@ -1,6 +1,6 @@
 // Route following: walk the selected route with GPS, see progress, and share a
 // live link. Also the viewer that opens from a share link (?follow=<id>).
-// Loaded after app.js and uses its globals (map, routeData, activeRoute, picks,
+// Loaded after app.js and uses its globals (map, routeData, activeRoute, stops,
 // mode, C, ROUTE_COLOR, API_URL, ...). Share endpoints: Contract 5.
 
 const WALK_MPS = 1.4;            // Contract 4 walking speed
@@ -19,7 +19,7 @@ const SIMULATE = Number(params.get("simulate")) || 0; // ?simulate=10 walks the 
 const follow = {
   route: null, name: null, geo: null, gaps: [],
   progress: 0, offCount: 0, fix: null,
-  watchId: null, simTimer: null, heartbeat: null,
+  watchId: null, simTimer: null, heartbeat: null, trailing: null,
   share: null, lastSent: 0, sending: false,
   me: null, userPannedAt: 0,
 };
@@ -61,7 +61,7 @@ function startViewerFromURL() {
 function setMode(next) {
   mode = next;
   document.body.dataset.mode = next;
-  for (const m of [picks.from, picks.to]) m?.setDraggable(next === "find");
+  for (const s of stops) s.marker?.setDraggable(next === "find");
 }
 
 // ---- Route geometry (local meters; fine at city scale) ------------------------------
@@ -276,18 +276,31 @@ function stopFollowing() {
   if (routeData) fitRoutes(routeData);
 }
 
-// Off route: plan again from where the walker is, keep the same share link.
+// Off route: plan again from where the walker is through the stops still ahead,
+// and keep the same share link. Stops already passed drop off the list.
 async function reroute() {
-  if (!follow.fix || !picks.to) return;
+  const placed = stops.filter((s) => s.lonLat);
+  if (!follow.fix || placed.length < 2) return;
   const btn = document.getElementById("reroute-btn");
   btn.disabled = true;
   try {
-    const to = picks.to.getLngLat();
-    const { data } = await fetchRoute({ lng: follow.fix[0], lat: follow.fix[1] }, { lng: to.lng, lat: to.lat });
-    picks.from.setLngLat(follow.fix);
-    showField("from", follow.fix);
+    const [first, ...rest] = placed;
+    const ahead = rest.filter((s, k) =>
+      k === rest.length - 1 || projectOnRoute(follow.geo, s.lonLat).along > follow.progress + ARRIVE_M);
+    const points = [follow.fix, ...ahead.map((s) => s.lonLat)];
+    const legs = await Promise.all(points.slice(1).map((b, k) => fetchRoute(points[k], b)));
+    const data = joinLegs(legs);
+
+    // Match the planner to the new route: start here, then the stops still ahead.
+    for (const s of stops) if (s !== first && !ahead.includes(s)) s.marker?.remove();
+    Object.assign(first, { lonLat: follow.fix, label: "Your location" });
+    first.marker?.setLngLat(follow.fix);
+    stops = [first, ...ahead];
+    renderStops();
+    setMode("follow"); // re-lock the markers renderStops refreshed
+
     showRoute(data);
-    showStats(data, false);
+    showStats(data);
     const name = data.same_route ? "lit" : follow.name;
     selectRoute(name);
     beginRoute(data.routes[name], name);
@@ -320,8 +333,8 @@ async function ensureShare() {
   follow.share = await api("/shares", {
     route: follow.route,
     route_name: follow.name,
-    from_label: labelOf("from"),
-    to_label: labelOf("to"),
+    from_label: stopLabel(0),
+    to_label: stopLabel(-1),
   });
   follow.lastSent = 0;
   if (follow.fix) sendLocation(follow.fix, follow.accuracy);
@@ -333,13 +346,23 @@ async function ensureShare() {
   return follow.share;
 }
 
-function labelOf(which) {
-  const el = document.getElementById(`${which}-value`);
-  return el.classList.contains("set") ? el.textContent : null;
+// Label of the first (0) or last (-1) stop that has a point, for the viewer.
+function stopLabel(which) {
+  const placed = stops.filter((s) => s.lonLat);
+  return placed.at(which)?.label?.slice(0, 80) || null;
 }
 
+// Sends the walker's latest fix. Fixes that arrive too soon after the last send
+// aren't dropped: one trailing send goes out once SHARE_EVERY_MS has passed.
 async function sendLocation(lonLat, accuracy) {
-  if (!follow.share || follow.sending || Date.now() - follow.lastSent < SHARE_EVERY_MS) return;
+  if (!follow.share) return;
+  const wait = SHARE_EVERY_MS - (Date.now() - follow.lastSent);
+  if (follow.sending || wait > 0) {
+    clearTimeout(follow.trailing);
+    follow.trailing = setTimeout(() => follow.fix && sendLocation(follow.fix, follow.accuracy), Math.max(wait, 250));
+    return;
+  }
+  clearTimeout(follow.trailing);
   follow.sending = true;
   follow.lastSent = Date.now();
   const scale = follow.route.length_m / follow.geo.total;
@@ -361,6 +384,7 @@ function endShare(arrived) {
   const share = follow.share;
   follow.share = null;
   clearInterval(follow.heartbeat);
+  clearTimeout(follow.trailing);
   document.getElementById("share-live").hidden = true;
   if (share) api(`/shares/${share.id}/end`, { token: share.token, arrived }).catch(() => {});
 }
@@ -484,17 +508,15 @@ function drawSharedRoute(view) {
   beginRoute(view.route, name);
 
   for (const m of viewer.ends) m.remove();
-  const end = (cls, lonLat) => {
+  // Start and destination, in app.js's lettered stop-marker style.
+  const end = (kind, letter, lonLat) => {
     const el = document.createElement("div");
-    el.className = cls;
-    if (el.classList.contains("marker-to")) {
-      el.innerHTML = `<svg viewBox="-12 -12 24 24" width="30" height="30" aria-hidden="true">
-        <path d="M0 -12C.6 -3 3 -.6 12 0C3 .6 .6 3 0 12C-.6 3 -3 .6 -12 0C-3 -.6 -.6 -3 0 -12Z" fill="${C.sky}"/></svg>`;
-    }
+    el.className = `stop-marker ${kind} view`;
+    el.textContent = letter;
     return new maplibregl.Marker({ element: el }).setLngLat(lonLat).addTo(map);
   };
   const cs = view.route.coords;
-  viewer.ends = [end("marker-from view", cs[0]), end("marker-to view", cs[cs.length - 1])];
+  viewer.ends = [end("first", "A", cs[0]), end("last", "B", cs[cs.length - 1])];
 
   if (!viewer.fitted) {
     viewer.fitted = true;

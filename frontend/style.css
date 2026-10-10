@@ -102,56 +102,191 @@ body {
   font-size: 1.3rem;
 }
 
-h1 {
-  margin: 14px 0 0;
-  font-weight: 400;
-  font-size: 1.9rem;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+/* stops (Google Maps–style directions list) */
+.directions { position: relative; }
+
+.stops {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-h1 em {
-  font-style: italic;
-  background: var(--beam);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  padding-right: 0.06em;
+.stop {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  column-gap: 10px;
+  position: relative;
 }
 
-/* from / to */
-.fields { margin: -6px 0 0; }
+.stop + .stop { margin-top: 8px; }
 
-.field {
+/* dotted connector between the stop letters */
+.stop + .stop::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: -12px;
+  height: 16px;
+  border-left: 2px dotted var(--text-faint);
+}
+
+.stop-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  justify-self: center;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--butter);
+  cursor: grab;
+  user-select: none;
+}
+
+.stop-icon.first { background: var(--rose); }
+.stop-icon.last { background: var(--sky); }
+
+.stop-form { min-width: 0; }
+
+.stop-form input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--night-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+}
+
+.stop-form input:focus { border-color: var(--sky); }
+.stop-form input::placeholder { color: var(--text-faint); }
+.stop-form input::-webkit-search-cancel-button { filter: invert(0.7); }
+
+.stop-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.stop-remove:hover { color: var(--text); background: var(--night-3); }
+.stop-remove[hidden] { display: block; visibility: hidden; }
+
+/* dropdown floats over the rows below, like Google Maps, so nothing shifts */
+.stop .results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 38px;
+  right: 38px;
+  z-index: 5;
+  margin: 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.stop.dragging { opacity: 0.4; }
+.stop.drop-target .stop-form input { border-color: var(--butter); }
+
+/* swap button sits in the right column, between the two stops */
+.swap {
+  position: absolute;
+  right: 24px;
+  top: 20px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: calc(2 * 41px + 8px);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 14px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.swap:hover { color: var(--text); background: var(--night-3); }
+.swap[hidden] { display: none; }
+
+.stops-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0 0 38px;
+}
+
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  background: none;
+  border: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.text-btn:hover { color: var(--text); }
+.text-btn[hidden] { display: none; }
+
+.options { margin-top: 12px; }
+
+.options summary {
+  width: max-content;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.options summary:hover { color: var(--text); }
+.options[open] summary { margin-bottom: 4px; }
+
+/* search results */
+.results {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  background: var(--night-1);
+}
+
+.results li + li { border-top: 1px solid var(--night-4); }
+
+.results button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.results button:hover,
+.results button:focus-visible { background: var(--night-3); outline: none; }
+
+.results button span {
+  display: block;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
+.results .results-location {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0;
+  gap: 10px;
+  color: var(--sky);
 }
 
-.field + .field { border-top: 1px solid var(--night-4); }
-
-.field-value {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.results-msg {
+  padding: 10px 12px;
   color: var(--text-faint);
 }
-
-.field-value.set { color: var(--text); }
-
-.pin-from-swatch,
-.pin-to-swatch {
-  width: 10px;
-  height: 10px;
-  flex: none;
-  border-radius: 50%;
-}
-
-.pin-from-swatch { background: var(--rose); }
-.pin-to-swatch { background: var(--sky); }
 
 .slider-row {
   display: grid;
@@ -245,46 +380,30 @@ input[type="range"]::-moz-range-thumb {
   background: linear-gradient(180deg, var(--rose), var(--tangerine), var(--butter), var(--mint), var(--sky));
 }
 
-.rc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rc-top { display: flex; align-items: baseline; gap: 10px; }
 
-.rc-name {
-  font-size: 1.25rem;
-  font-weight: 500;
+.rc-time {
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.rc-time { font-variant-numeric: tabular-nums; }
+.route-card[aria-pressed="true"] .rc-time { color: var(--rc); }
 
-.rc-tag { display: block; margin-top: 2px; font-size: 0.9rem; color: var(--text-secondary); }
+.rc-name { color: var(--text-secondary); }
 
-.route-card .track {
-  display: block;
-  height: 3px;
-  margin-top: 10px;
-  background: var(--night-4);
-}
+.rc-tag { display: block; margin-top: 2px; color: var(--text-secondary); }
 
-.route-card .fill {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--rc);
-  transition: width 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.route-card[data-route="lit"] .fill { background: var(--beam); }
-
-.route-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  padding: 16px 24px;
-}
+.rc-via { display: block; color: var(--text-faint); font-size: 0.9rem; }
+.rc-via:empty { display: none; }
 
 .route-note {
   margin: 0;
+  padding: 16px 24px;
   color: var(--text-secondary);
 }
+
+.route-note:empty { display: none; }
 
 .link {
   flex: none;
@@ -299,22 +418,23 @@ input[type="range"]::-moz-range-thumb {
 
 .link:hover { color: var(--text); }
 
-/* map markers */
-.marker-from {
-  width: 14px;
-  height: 14px;
+/* map markers: lettered stops, matching the list */
+.stop-marker {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--rose);
-  box-shadow: 0 0 0 6px rgba(255, 143, 195, 0.3), 0 0 16px var(--rose);
+  border: 2px solid var(--night-1);
+  background: var(--butter);
+  color: var(--ink);
+  font: 700 0.75rem/1 var(--font);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
   cursor: grab;
 }
 
-.marker-to {
-  width: 30px;
-  height: 30px;
-  cursor: grab;
-  filter: drop-shadow(0 0 6px var(--sky));
-}
+.stop-marker.first { background: var(--rose); }
+.stop-marker.last { background: var(--sky); }
 
 /* MapLibre chrome in the night palette */
 .maplibregl-ctrl-group {
@@ -442,7 +562,7 @@ body[data-mode="view"] h1 { display: none; }
   box-shadow: 0 0 0 0 rgba(140, 202, 255, 0.6);
   animation: pulse-ring 2s ease-out infinite;
 }
-.marker-from.view, .marker-to.view { cursor: default; }
+.stop-marker.view { cursor: default; }
 
 @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
 @keyframes pulse-ring {
