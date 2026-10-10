@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asterism — safer night walks</title>
+<!-- No DESIGN.md found — tokens defined inline from the brief's mood references (70s collage, Ewha "The Coordinate", painted neuron stars, opal moon). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..800,100;1,9..144,300..800,100&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400..700&display=swap" rel="stylesheet">
+<style>
+  /* === DESIGN TOKENS === */
+  :root {
+    /* night: charcoal-plum, not navy */
+    --night-1: #140e1a;
+    --night-2: #1e1627;
+    --night-3: #2a2035;
+    --night-4: #3a2e48;
+    --border: #4d3f60;
+    --text: #f7efe4;           /* opal cream */
+    --text-secondary: #cbbdd8;
+    --text-faint: #9a8aab;
+
+    /* the beam: coral → tangerine → butter → mint → sky → lilac */
+    --coral: #ff7a66;
+    --rose: #ff8fc3;
+    --tangerine: #ffa255;
+    --butter: #ffd88a;
+    --mint: #7fe3bf;
+    --sky: #8ccaff;
+    --lilac: #b9a0ff;
+    --beam: linear-gradient(90deg, var(--rose), var(--coral), var(--tangerine), var(--butter), var(--mint), var(--sky), var(--lilac));
+
+    /* daylight paper (Ewha poster) */
+    --mist: #dde9ef;
+    --mist-2: #c9dbe4;
+    --ink: #1b1722;
+    --ink-2: #4a4458;
+    --flare: #ff5f3a;
+
+    --accent-solid: var(--coral);
+    --accent-on-solid: #1b1722;
+
+    --font-display: "Fraunces", Georgia, serif;
+    --font-body: "DM Sans", system-ui, sans-serif;
+    --font-mono: "DM Mono", ui-monospace, monospace;
+
+    --r-sm: 10px;
+    --r-md: 18px;
+    --r-lg: 28px;
+    --gutter: clamp(16px, 4vw, 48px);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--night-1);
+    color: var(--text);
+    line-height: 1.5;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--butter); outline-offset: 3px; border-radius: 6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 var(--gutter); }
+  .mono { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  /* starfield + film grain */
+  .sky {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, #3b2140 0%, transparent 60%),
+      radial-gradient(900px 600px at -10% 40%, #24193a 0%, transparent 60%),
+      var(--night-1);
+    transition: background 600ms ease;
+  }
+  .sky canvas { width: 100%; height: 100%; display: block; }
+
+  /* === HEADER === */
+  header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--night-1) 70%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; gap: 16px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 600; font-size: 1.35rem; text-decoration: none; font-variation-settings: "SOFT" 100; }
+  .logo svg { width: 28px; height: 28px; }
+  .nav ul { display: flex; gap: 28px; list-style: none; }
+  .nav ul a { text-decoration: none; color: var(--text-secondary); font-size: 0.95rem; }
+  .nav ul a:hover { color: var(--text); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 0 20px; border-radius: 999px; border: 0; cursor: pointer;
+    font-weight: 600; text-decoration: none; transition: transform 150ms ease, box-shadow 200ms ease;
+  }
+  .btn-primary { background: var(--coral); color: var(--accent-on-solid); box-shadow: 0 0 0 0 rgba(255,122,102,.5); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 30px -6px rgba(255,122,102,.7); }
+  .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { border-color: var(--text-secondary); }
+  @media (max-width: 760px) { .nav ul { display: none; } }
+
+  /* === HERO === */
+  .hero { position: relative; padding: clamp(48px, 8vw, 96px) 0 64px; overflow: hidden; }
+  .beam {
+    position: absolute; left: -20%; right: -20%; top: 58%; height: 54px;
+    background: linear-gradient(180deg, var(--rose), var(--coral) 18%, var(--tangerine) 34%, var(--butter) 50%, var(--mint) 66%, var(--sky) 82%, var(--lilac));
+    transform: rotate(-17deg); filter: blur(6px) saturate(1.1); opacity: .55;
+    mask-image: linear-gradient(90deg, transparent, #000 25%, #000 70%, transparent);
+  }
+  .beam::after { content: ""; position: absolute; inset: -30px 0; background: inherit; filter: blur(40px); opacity: .6; }
+  .hero-grid { position: relative; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+  @media (max-width: 920px) { .hero-grid { grid-template-columns: 1fr; } }
+  .eyebrow { display: inline-flex; align-items: center; gap: 10px; color: var(--butter); }
+  .eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 12px var(--mint); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  h1 {
+    font-family: var(--font-display); font-weight: 400; font-variation-settings: "SOFT" 100, "opsz" 144;
+    font-size: clamp(2.8rem, 7vw, 5.6rem); line-height: 0.98; letter-spacing: -0.02em; margin: 18px 0 22px;
+  }
+  h1 em { font-style: italic; background: var(--beam); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .06em; }
+  .lede { font-size: 1.15rem; color: var(--text-secondary); max-width: 34ch; }
+
+  /* planner card */
+  .planner {
+    margin-top: 32px; max-width: 540px; padding: 20px; border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--night-2) 85%, transparent); border: 1px solid var(--border);
+    box-shadow: 0 30px 80px -30px rgba(0,0,0,.7);
+  }
+  .field { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-md); background: var(--night-3); }
+  .field + .field { margin-top: 8px; }
+  .field label { width: 44px; color: var(--text-faint); }
+  .field input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; min-height: 32px; font-size: 1rem; }
+  .field .pin { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .planner-connector { position: absolute; left: 34px; top: 46px; width: 2px; height: 30px; background: repeating-linear-gradient(var(--text-faint) 0 3px, transparent 3px 7px); }
+  .weights { margin-top: 18px; display: grid; gap: 14px; }
+  .slider-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; font-size: 0.9rem; color: var(--text-secondary); }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 6px; background: var(--beam); }
+  input[type="range"]::-moz-range-track { height: 6px; border-radius: 6px; background: var(--beam); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 26px; height: 26px; margin-top: -10px; border: 0; background: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0C13 8 16 11 24 12C16 13 13 16 12 24C11 16 8 13 0 12C8 11 11 8 12 0Z' fill='%23fff8ee'/%3E%3C/svg%3E");
+    filter: drop-shadow(0 0 6px #fff);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 26px; height: 26px; border: 0; background: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0C13 8 16 11 24 12C16 13 13 16 12 24C11 16 8 13 0 12C8 11 11 8 12 0Z' fill='%23fff8ee'/%3E%3C/svg%3E");
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chip {
+    min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+    color: var(--text-secondary); cursor: pointer; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 8px;
+    transition: all 200ms ease;
+  }
+  .chip[aria-pressed="true"] { background: color-mix(in srgb, var(--chip, var(--mint)) 18%, transparent); border-color: var(--chip, var(--mint)); color: var(--text); }
+  .chip .sw { width: 8px; height: 8px; border-radius: 2px; background: var(--chip, var(--mint)); }
+  .planner .btn-primary { width: 100%; margin-top: 18px; min-height: 52px; font-size: 1.02rem; }
+
+  /* opal moon */
+  .moon-stage { position: relative; aspect-ratio: 1; max-width: 480px; justify-self: center; width: 100%; }
+  .moon {
+    position: absolute; inset: 8%; border-radius: 50%; overflow: hidden;
+    background:
+      radial-gradient(30% 22% at 30% 30%, rgba(140,202,255,.85), transparent 70%),
+      radial-gradient(26% 20% at 66% 26%, rgba(255,122,102,.85), transparent 70%),
+      radial-gradient(24% 26% at 46% 52%, rgba(185,160,255,.9), transparent 70%),
+      radial-gradient(18% 14% at 74% 48%, rgba(255,162,85,.8), transparent 70%),
+      radial-gradient(20% 16% at 26% 58%, rgba(127,227,191,.75), transparent 70%),
+      radial-gradient(22% 16% at 70% 70%, rgba(140,202,255,.7), transparent 70%),
+      radial-gradient(16% 12% at 22% 40%, rgba(214,230,120,.65), transparent 70%),
+      radial-gradient(100% 100% at 50% 50%, #f1ece4 40%, #ddd6cc 100%);
+    box-shadow: 0 0 80px 10px rgba(185,160,255,.25), 0 0 160px 40px rgba(255,143,195,.12), inset -30px -40px 80px rgba(120,100,140,.25);
+    animation: drift 30s linear infinite;
+  }
+  .moon::before { /* brushstroke texture */
+    content: ""; position: absolute; inset: -20%;
+    background: repeating-linear-gradient(-28deg, rgba(255,255,255,.22) 0 3px, transparent 3px 11px),
+                repeating-linear-gradient(52deg, rgba(255,255,255,.12) 0 2px, transparent 2px 17px);
+    mix-blend-mode: soft-light;
+  }
+  .moon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(60% 60% at 40% 35%, transparent 55%, rgba(241,236,228,.7) 100%); }
+  @keyframes drift { to { filter: hue-rotate(360deg); } }
+  .sparkle { position: absolute; color: #fff; filter: drop-shadow(0 0 10px rgba(255,255,255,.9)); animation: twinkle 3.4s ease-in-out infinite; }
+  .sparkle svg { width: 100%; height: 100%; display: block; }
+  @keyframes twinkle { 50% { transform: scale(.7) rotate(12deg); opacity: .7; } }
+  .moon-caption {
+    position: absolute; bottom: 0; right: 0; padding: 10px 14px; border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--night-2) 80%, transparent); border: 1px solid var(--border); backdrop-filter: blur(6px);
+  }
+  .moon-caption strong { display: block; font-family: var(--font-display); font-size: 1.4rem; font-weight: 500; }
+  @media (max-width: 920px) { .moon-stage { max-width: 320px; order: -1; } }
+
+  /* === SECTION HEADINGS === */
+  section { position: relative; }
+  .sec { padding: clamp(64px, 9vw, 112px) 0; }
+  h2 { font-family: var(--font-display); font-weight: 400; font-variation-settings: "SOFT" 100; font-size: clamp(2rem, 4.5vw, 3.4rem); line-height: 1.04; letter-spacing: -0.015em; }
+  h2 em { font-style: italic; color: var(--coral); }
+  .sec-head { display: flex; justify-content: space-between; align-items: end; gap: 24px; flex-wrap: wrap; margin-bottom: 36px; }
+  .sec-head p { color: var(--text-secondary); max-width: 42ch; }
+
+  /* === MAP === */
+  .map-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; }
+  @media (max-width: 1000px) { .map-layout { grid-template-columns: 1fr; } }
+  .map-card {
+    position: relative; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--border);
+    background:
+      radial-gradient(circle, rgba(203,189,216,.16) 1.1px, transparent 1.4px) 0 0 / 12px 12px,
+      radial-gradient(700px 400px at 70% 10%, rgba(255,143,195,.10), transparent 60%),
+      var(--night-2);
+  }
+  .map-toolbar { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; z-index: 2; pointer-events: none; }
+  .map-toolbar > * { pointer-events: auto; }
+  @media (max-width: 640px) { .map-toolbar { position: static; padding: 12px 12px 0; } }
+  .layers { display: flex; gap: 6px; flex-wrap: wrap; }
+  .layers .chip { background: color-mix(in srgb, var(--night-1) 75%, transparent); backdrop-filter: blur(6px); }
+  .clock { display: flex; align-items: center; gap: 10px; padding: 4px 14px; border-radius: 999px; background: color-mix(in srgb, var(--night-1) 75%, transparent); border: 1px solid var(--border); backdrop-filter: blur(6px); }
+  .clock input { width: 120px; height: 36px; }
+  .clock output { font-family: var(--font-mono); font-size: .85rem; min-width: 64px; }
+  #map { display: block; width: 100%; height: auto; aspect-ratio: 800 / 580; }
+  #map .street { stroke: #3e3150; stroke-width: 10; stroke-linecap: round; }
+  #map .street-core { stroke: #2b2138; stroke-width: 6; stroke-linecap: round; }
+  #map .park { fill: #1a2a26; stroke: #2b4a40; stroke-dasharray: 3 5; }
+  #map .label { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; fill: var(--text-faint); text-transform: uppercase; }
+  #map .light { transition: opacity 400ms ease; cursor: pointer; }
+  #map .incident { fill: none; stroke: var(--coral); stroke-width: 1.5; cursor: pointer; }
+  #map .incident-core { fill: var(--coral); }
+  #map .shop { fill: var(--mint); cursor: pointer; transition: opacity 400ms ease; }
+  #map .route { fill: none; stroke-linecap: round; stroke-linejoin: round; transition: opacity 400ms ease, stroke-width 300ms ease; }
+  #map .route-ghost { stroke-dasharray: 2 9; stroke-width: 2.5; opacity: .55; cursor: pointer; }
+  #map .route-active { stroke-width: 5; filter: url(#glow); }
+  #map .route-halo { fill: none; stroke-width: 18; stroke-linecap: round; stroke-linejoin: round; opacity: 0; filter: url(#soft); transition: opacity 400ms ease; }
+  #map #lights { opacity: .6; }
+  #map .node { transition: opacity 300ms ease; }
+  .layer-off { opacity: 0 !important; pointer-events: none; }
+  .tip {
+    position: absolute; z-index: 5; pointer-events: none; padding: 8px 12px; border-radius: var(--r-sm);
+    background: var(--text); color: var(--ink); font-size: .82rem; line-height: 1.35; max-width: 220px;
+    transform: translate(-50%, calc(-100% - 14px)); opacity: 0; transition: opacity 150ms ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  .tip b { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; display: block; color: var(--ink-2); }
+  .tip.show { opacity: 1; }
+
+  .routes { display: grid; gap: 12px; align-content: start; }
+  .route-card {
+    text-align: left; width: 100%; padding: 18px; border-radius: var(--r-md); cursor: pointer;
+    background: var(--night-2); border: 1px solid var(--border); transition: border-color 200ms ease, transform 200ms ease, background 200ms ease;
+    position: relative; overflow: hidden;
+  }
+  .route-card:hover { transform: translateX(-3px); }
+  .route-card[aria-pressed="true"] { border-color: var(--rc); background: color-mix(in srgb, var(--rc) 9%, var(--night-2)); }
+  .route-card[aria-pressed="true"]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--rc); }
+  .rc-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .rc-name { font-family: var(--font-display); font-size: 1.45rem; font-weight: 500; font-variation-settings: "SOFT" 100; }
+  .rc-time { font-family: var(--font-mono); font-size: 1.05rem; }
+  .rc-tag { display: inline-block; margin-top: 4px; font-size: .8rem; color: var(--text-secondary); }
+  .rec-badge { display: none; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--rc); color: var(--ink); font-family: var(--font-mono); font-size: .66rem; letter-spacing: .06em; text-transform: uppercase; vertical-align: middle; }
+  .route-card.recommended .rec-badge { display: inline-block; }
+  .bars { display: grid; gap: 8px; margin-top: 14px; }
+  .bar { display: grid; grid-template-columns: 74px 1fr 38px; gap: 10px; align-items: center; font-size: .8rem; color: var(--text-secondary); }
+  .bar .track { height: 6px; border-radius: 6px; background: var(--night-4); overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 6px; background: var(--c); width: 0; transition: width 700ms cubic-bezier(.2,.8,.2,1); }
+  .bar span:last-child { font-family: var(--font-mono); text-align: right; color: var(--text); }
+  .route-note { padding: 16px 18px; border-radius: var(--r-md); border: 1px dashed var(--border); color: var(--text-secondary); font-size: .9rem; }
+  .route-note strong { color: var(--butter); font-weight: 600; }
+
+  /* === HOW IT WORKS (Ewha daylight paper) === */
+  .paper {
+    background:
+      radial-gradient(circle, rgba(27,23,34,.35) 1px, transparent 1.3px) 0 0 / 9px 9px,
+      var(--mist);
+    color: var(--ink);
+    border-radius: var(--r-lg);
+    position: relative; overflow: hidden; padding: clamp(32px, 6vw, 72px);
+  }
+  .flare-v { position: absolute; top: 0; bottom: 0; left: 62%; width: 22px; background: linear-gradient(90deg, transparent, rgba(255,95,58,.55), rgba(255,180,90,.9), rgba(255,95,58,.55), transparent); filter: blur(4px); }
+  .flare-h { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(255,170,80,.9) 50%, transparent); }
+  .flare-star { position: absolute; width: 120px; height: 120px; transform: translate(-50%, -50%); background: radial-gradient(circle, #fff 0 4%, rgba(255,140,60,.9) 10%, rgba(255,95,58,.25) 35%, transparent 65%); }
+  .flare-star::before, .flare-star::after { content: ""; position: absolute; left: 50%; top: 50%; background: linear-gradient(90deg, transparent, #ffb36b, transparent); transform: translate(-50%, -50%); }
+  .flare-star::before { width: 260px; height: 3px; }
+  .flare-star::after { width: 3px; height: 200px; background: linear-gradient(transparent, #ffb36b, transparent); }
+  .paper-head { position: relative; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-family: var(--font-mono); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+  .paper h2 { position: relative; color: var(--ink); margin: 28px 0 8px; max-width: 16ch; }
+  .paper h2 em { color: var(--flare); }
+  .paper > p { position: relative; color: var(--ink-2); max-width: 46ch; }
+  .factors { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 44px; }
+  @media (max-width: 860px) { .factors { grid-template-columns: 1fr; } }
+  .factor {
+    padding: 22px; border-radius: var(--r-md); background: rgba(240,246,249,.82); backdrop-filter: blur(3px);
+    border: 1px solid var(--mist-2); cursor: pointer; text-align: left; transition: transform 250ms ease, box-shadow 250ms ease;
+  }
+  .factor:hover, .factor[aria-expanded="true"] { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(27,23,34,.35); }
+  .factor svg { width: 64px; height: 64px; display: block; margin-bottom: 14px; }
+  .factor .num { font-family: var(--font-mono); font-size: .75rem; color: var(--ink-2); }
+  .factor h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.5rem; margin: 2px 0 6px; font-variation-settings: "SOFT" 100; }
+  .factor p { color: var(--ink-2); font-size: .95rem; }
+  .factor .more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 350ms ease; }
+  .factor .more > div { overflow: hidden; }
+  .factor[aria-expanded="true"] .more { grid-template-rows: 1fr; }
+  .factor .more ul { list-style: none; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--ink-2); display: grid; gap: 6px; font-size: .88rem; }
+  .factor .more li { display: flex; justify-content: space-between; gap: 10px; }
+  .factor .more li span:last-child { font-family: var(--font-mono); }
+  .factor .toggle { margin-top: 12px; font-family: var(--font-mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--flare); }
+
+  /* === YOUR CONSTELLATION === */
+  .circle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  @media (max-width: 900px) { .circle-grid { grid-template-columns: 1fr; } }
+  .circle-copy p { color: var(--text-secondary); margin: 16px 0 24px; max-width: 40ch; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-radius: var(--r-md); background: var(--night-2); border: 1px solid var(--border); }
+  .switch-row + .switch-row { margin-top: 10px; }
+  .switch-row small { display: block; color: var(--text-faint); }
+  .switch { position: relative; width: 56px; height: 32px; border-radius: 999px; border: 0; background: var(--night-4); cursor: pointer; flex: none; transition: background 250ms ease; }
+  .switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 50%; background: var(--text); transition: transform 250ms cubic-bezier(.3,1.4,.5,1); }
+  .switch[aria-checked="true"] { background: var(--mint); }
+  .switch[aria-checked="true"]::after { transform: translateX(24px); background: var(--ink); }
+  .add-row { display: flex; gap: 8px; margin-top: 18px; }
+  .add-row input { flex: 1; min-width: 0; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--border); background: var(--night-2); outline: none; }
+  .add-row input:focus { border-color: var(--lilac); }
+  .constellation-card { position: relative; aspect-ratio: 1; border-radius: var(--r-lg); background: radial-gradient(circle at 50% 50%, #2c1f3a, var(--night-1) 70%); border: 1px solid var(--border); overflow: hidden; }
+  #friends { width: 100%; height: 100%; display: block; }
+  #friends .fname { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; fill: var(--text-secondary); text-transform: uppercase; }
+  #friends .tendril { fill: none; stroke-linecap: round; }
+  .share-status { position: absolute; left: 16px; bottom: 16px; right: 16px; display: flex; justify-content: space-between; gap: 12px; font-size: .85rem; color: var(--text-secondary); }
+  .share-status .live { color: var(--mint); display: inline-flex; align-items: center; gap: 8px; }
+  .share-status .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; animation: pulse 1.6s infinite; }
+
+  /* === CTA / FOOTER === */
+  .cta { text-align: center; padding: clamp(80px, 10vw, 140px) 0; position: relative; overflow: hidden; }
+  .cta .beam { top: 50%; opacity: .4; }
+  .cta h2 { position: relative; font-size: clamp(2.4rem, 6vw, 4.6rem); max-width: 16ch; margin: 0 auto 28px; }
+  .cta .row { position: relative; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--text-faint); font-size: .85rem; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"><canvas id="stars"></canvas></div>
+
+<header>
+  <nav class="wrap nav" aria-label="Main">
+    <a class="logo" href="#">
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <defs><linearGradient id="lg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#ff8fc3"/><stop offset=".5" stop-color="#ffa255"/><stop offset="1" stop-color="#8ccaff"/></linearGradient></defs>
+        <path d="M4 22 L11 13 L17 16 L24 5" fill="none" stroke="url(#lg)" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="4" cy="22" r="2.2" fill="#ff8fc3"/><circle cx="11" cy="13" r="1.8" fill="#ffa255"/><circle cx="17" cy="16" r="1.8" fill="#7fe3bf"/>
+        <path d="M24 0.5C24.5 4 25.5 5 28 5.2C25.5 5.5 24.5 6.5 24 10C23.5 6.5 22.5 5.5 20 5.2C22.5 5 23.5 4 24 0.5Z" fill="#fff8ee"/>
+      </svg>
+      Asterism
+    </a>
+    <ul>
+      <li><a href="#map-sec">Plan a walk</a></li>
+      <li><a href="#how">How we score</a></li>
+      <li><a href="#circle">Your circle</a></li>
+    </ul>
+    <a class="btn btn-primary" href="#map-sec">Walk me home</a>
+  </nav>
+</header>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="beam" aria-hidden="true"></div>
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow mono"><span class="dot"></span>2,418 streetlights mapped tonight</span>
+        <h1>Find the route that <em>shines brightest.</em></h1>
+        <p class="lede">Asterism connects the lit streets, open storefronts and quiet-report data into one path — your own constellation home.</p>
+
+        <form class="planner" id="planner" onsubmit="return false" aria-label="Plan a route">
+          <div style="position:relative">
+            <div class="field"><span class="pin" style="background:var(--rose);box-shadow:0 0 10px var(--rose)"></span><label class="mono" for="from">From</label><input id="from" value="Orchard Ave &amp; 9th"></div>
+            <span class="planner-connector" aria-hidden="true"></span>
+            <div class="field"><span class="pin" style="background:var(--sky);box-shadow:0 0 10px var(--sky)"></span><label class="mono" for="to">To</label><input id="to" value="Home · 214 Halcyon St"></div>
+          </div>
+          <div class="weights">
+            <div class="slider-row">
+              <span>Fastest</span>
+              <input type="range" id="glow" min="0" max="100" value="72" aria-label="Weighting between speed and light">
+              <span>Brightest</span>
+            </div>
+            <div class="chips" role="group" aria-label="Preferences">
+              <button type="button" class="chip" aria-pressed="true" style="--chip:var(--mint)" data-pref="shops"><span class="sw"></span>Pass open shops</button>
+              <button type="button" class="chip" aria-pressed="true" style="--chip:var(--coral)" data-pref="parks"><span class="sw"></span>Skip unlit parks</button>
+              <button type="button" class="chip" aria-pressed="false" style="--chip:var(--lilac)" data-pref="share"><span class="sw"></span>Share live with circle</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="draw" type="submit">Draw my constellation ✦</button>
+        </form>
+      </div>
+
+      <div class="moon-stage" aria-hidden="true">
+        <div class="moon"></div>
+        <span class="sparkle" style="left:38%;top:24%;width:16%;height:22%;"><svg viewBox="0 0 24 36"><path d="M12 0C12.8 13 14 16 24 18C14 20 12.8 23 12 36C11.2 23 10 20 0 18C10 16 11.2 13 12 0Z" fill="currentColor"/></svg></span>
+        <span class="sparkle" style="left:30%;top:66%;width:12%;height:16%;animation-delay:-1.4s"><svg viewBox="0 0 24 36"><path d="M12 0C12.8 13 14 16 24 18C14 20 12.8 23 12 36C11.2 23 10 20 0 18C10 16 11.2 13 12 0Z" fill="currentColor"/></svg></span>
+        <span class="sparkle" style="left:84%;top:10%;width:6%;height:8%;animation-delay:-2.2s"><svg viewBox="0 0 24 36"><path d="M12 0C12.8 13 14 16 24 18C14 20 12.8 23 12 36C11.2 23 10 20 0 18C10 16 11.2 13 12 0Z" fill="currentColor"/></svg></span>
+        <div class="moon-caption"><span class="mono" style="color:var(--text-faint)">Moon · 87% full</span><strong>Bright night</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAP -->
+  <section class="sec" id="map-sec">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Three paths home.<br><em>One</em> that glows.</h2>
+        <p>Every streetlight is a star. Hover them to see what's working, scrub the clock to see the city change after midnight.</p>
+      </div>
+
+      <div class="map-layout">
+        <div class="map-card">
+          <div class="map-toolbar">
+            <div class="layers" role="group" aria-label="Map layers">
+              <button type="button" class="chip" aria-pressed="true" style="--chip:var(--butter)" data-layer="lights"><span class="sw"></span>Streetlights</button>
+              <button type="button" class="chip" aria-pressed="true" style="--chip:var(--mint)" data-layer="shops"><span class="sw"></span>Open now</button>
+              <button type="button" class="chip" aria-pressed="true" style="--chip:var(--coral)" data-layer="incidents"><span class="sw"></span>Reports</button>
+            </div>
+            <label class="clock"><span class="sr-only">Time of walk</span><span class="mono" style="color:var(--text-faint)">☾</span><input type="range" id="clock" min="0" max="8" value="3" aria-label="Time of walk"><output id="clock-out">11:30 pm</output></label>
+          </div>
+          <svg id="map" viewBox="0 0 800 580" role="img" aria-label="Map of three walking routes with streetlights, open businesses, and incident reports">
+            <defs>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <filter id="soft" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="4"/></filter>
+              <linearGradient id="beamGrad" gradientUnits="userSpaceOnUse" x1="80" y1="500" x2="720" y2="80">
+                <stop offset="0" stop-color="#ff8fc3"/><stop offset=".2" stop-color="#ff7a66"/><stop offset=".4" stop-color="#ffa255"/><stop offset=".6" stop-color="#ffd88a"/><stop offset=".8" stop-color="#7fe3bf"/><stop offset="1" stop-color="#8ccaff"/>
+              </linearGradient>
+              <symbol id="spark" viewBox="-12 -12 24 24"><path d="M0 -12C.6 -3 3 -.6 12 0C3 .6 .6 3 0 12C-.6 3 -3 .6 -12 0C-3 -.6 -.6 -3 0 -12Z"/></symbol>
+            </defs>
+            <rect class="park" x="340" y="272" width="120" height="100" rx="14"/>
+            <text class="label" x="400" y="326" text-anchor="middle" style="fill:#5d8a7a">Mercer Park</text>
+            <text class="label" x="400" y="340" text-anchor="middle" style="fill:#5d8a7a;font-size:8px">unlit after 10pm</text>
+            <g id="streets"></g>
+            <g id="labels">
+              <text class="label" x="208" y="560">Valencia</text>
+              <text class="label" x="560" y="72">Halcyon St</text>
+              <text class="label" x="44" y="492">Orchard Ave</text>
+              <text class="label" x="610" y="252">Lantern St</text>
+            </g>
+            <g id="lights"></g>
+            <g id="shops"></g>
+            <g id="incidents"></g>
+            <g id="routes"></g>
+            <g id="nodes"></g>
+            <circle id="walker" r="6" fill="#fff8ee" filter="url(#glow)" opacity="0"/>
+            <g>
+              <circle cx="80" cy="500" r="10" fill="#ff8fc3" opacity=".3"/><circle cx="80" cy="500" r="5" fill="#ff8fc3"/>
+              <text class="label" x="92" y="524" style="fill:#ff8fc3">You</text>
+              <use href="#spark" x="706" y="66" width="28" height="28" fill="#8ccaff" filter="url(#glow)"/>
+              <text class="label" x="680" y="112" style="fill:#8ccaff">Home</text>
+            </g>
+          </svg>
+          <div class="tip" id="tip"></div>
+        </div>
+
+        <div class="routes" id="route-list">
+          <!-- filled by script -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section class="sec" id="how" style="padding-top:0">
+    <div class="wrap">
+      <div class="paper">
+        <div class="flare-v" aria-hidden="true"></div>
+        <div class="flare-h" style="top:30%" aria-hidden="true"></div>
+        <div class="flare-h" style="top:78%;opacity:.6" aria-hidden="true"></div>
+        <div class="flare-star" style="left:62%;top:30%" aria-hidden="true"></div>
+        <div class="flare-star" style="left:62%;top:78%;opacity:.7" aria-hidden="true"></div>
+        <div class="paper-head"><span>How we score a street</span><span>( dusk ) → ( dawn )</span></div>
+        <h2>Every block gets a <em>brightness</em> score.</h2>
+        <p>We blend three open-data signals per 50m of sidewalk, re-weighted by the hour. Tap a factor to see the inputs.</p>
+
+        <div class="factors">
+          <button class="factor" aria-expanded="false" type="button">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><g stroke-linecap="round" fill="none" stroke-width="2.2">
+              <path d="M32 32 L32 4" stroke="#ffa255"/><path d="M32 32 L58 14" stroke="#ff8fc3"/><path d="M32 32 L60 40" stroke="#b9a0ff"/><path d="M32 32 L40 60" stroke="#8ccaff"/><path d="M32 32 L10 56" stroke="#7fe3bf"/><path d="M32 32 L4 28" stroke="#ff7a66"/><path d="M32 32 L14 6" stroke="#ffd88a"/></g>
+              <circle cx="32" cy="32" r="7" fill="#fff8ee"/><circle cx="32" cy="32" r="3.5" fill="#8ccaff"/></svg>
+            <span class="num">01 · 45%</span>
+            <h3>Light</h3>
+            <p>Streetlight density, outage reports, and lux from city sensors.</p>
+            <div class="more"><div><ul><li><span>City pole registry</span><span>18,240</span></li><li><span>Outages (311, 48h)</span><span>live</span></li><li><span>Storefront glow</span><span>after 9pm</span></li></ul></div></div>
+            <span class="toggle">+ inputs</span>
+          </button>
+          <button class="factor" aria-expanded="false" type="button">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><g stroke-linecap="round" fill="none" stroke-width="2.2">
+              <path d="M32 32 Q 36 18 30 4" stroke="#7fe3bf"/><path d="M32 32 Q 48 26 60 18" stroke="#8ccaff"/><path d="M32 32 Q 46 44 56 58" stroke="#b9a0ff"/><path d="M32 32 Q 22 46 14 60" stroke="#ffd88a"/><path d="M32 32 Q 16 30 4 22" stroke="#ff8fc3"/></g>
+              <circle cx="32" cy="32" r="7" fill="#fff8ee"/><circle cx="32" cy="32" r="3.5" fill="#7fe3bf"/></svg>
+            <span class="num">02 · 35%</span>
+            <h3>Activity</h3>
+            <p>Businesses open right now and foot traffic — eyes on the street.</p>
+            <div class="more"><div><ul><li><span>Open-hours listings</span><span>by minute</span></li><li><span>Transit stops nearby</span><span>±150m</span></li><li><span>Community "safe spots"</span><span>312</span></li></ul></div></div>
+            <span class="toggle">+ inputs</span>
+          </button>
+          <button class="factor" aria-expanded="false" type="button">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><g stroke-linecap="round" fill="none" stroke-width="2.2">
+              <path d="M32 32 L32 6" stroke="#ff7a66"/><path d="M32 32 L54 46" stroke="#ffa255"/><path d="M32 32 L10 46" stroke="#ff8fc3"/><path d="M32 32 L56 18" stroke="#b9a0ff" stroke-dasharray="2 4"/><path d="M32 32 L8 18" stroke="#8ccaff" stroke-dasharray="2 4"/></g>
+              <circle cx="32" cy="32" r="7" fill="#fff8ee"/><circle cx="32" cy="32" r="3.5" fill="#ff7a66"/></svg>
+            <span class="num">03 · 20%</span>
+            <h3>Reports</h3>
+            <p>Public incident data and anonymous community reports, decayed over 90 days.</p>
+            <div class="more"><div><ul><li><span>Public incident feed</span><span>daily</span></li><li><span>Community reports</span><span>verified ×2</span></li><li><span>Half-life</span><span>30 days</span></li></ul></div></div>
+            <span class="toggle">+ inputs</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CIRCLE -->
+  <section class="sec" id="circle" style="padding-top:0">
+    <div class="wrap circle-grid">
+      <div class="circle-copy">
+        <span class="mono" style="color:var(--lilac)">Your circle</span>
+        <h2 style="margin-top:12px">Your friends, <em>as a constellation.</em></h2>
+        <p>Pick who watches over your walk. They see your star move and get a nudge if you stop somewhere unexpected.</p>
+        <div class="switch-row"><div>Share my walk live<small>Only while a route is active</small></div><button class="switch" role="switch" aria-checked="true" id="share-switch" aria-label="Share my walk live"></button></div>
+        <div class="switch-row"><div>Check-in when I arrive<small>Sends "home safe ✦" automatically</small></div><button class="switch" role="switch" aria-checked="true" aria-label="Check-in when I arrive"></button></div>
+        <form class="add-row" id="add-friend" onsubmit="return false">
+          <label for="friend-name" class="sr-only">Friend's name</label>
+          <input id="friend-name" placeholder="Add a star — friend's name" maxlength="14">
+          <button class="btn btn-ghost" type="submit">Add ✦</button>
+        </form>
+      </div>
+      <div class="constellation-card">
+        <svg id="friends" viewBox="0 0 400 400" aria-label="Your trusted circle"></svg>
+        <div class="share-status"><span class="live" id="live-label">Sharing with 3</span><span class="mono">ETA 11:52 pm</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="beam" aria-hidden="true"></div>
+    <div class="wrap">
+      <h2>Walk home under <em>your own</em> stars.</h2>
+      <div class="row"><a class="btn btn-primary" href="#map-sec">Plan tonight's walk</a><a class="btn btn-ghost" href="#how">Report a dark street</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap"><span>Asterism · mock v0.1 · demo data only</span><span>Emergency? Call 911 — Asterism is a guide, not a guarantee.</span></div>
+</footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs = {}, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); parent && parent.appendChild(n); return n; };
+
+  /* ---------- starfield ---------- */
+  const cv = document.getElementById('stars'), ctx = cv.getContext('2d');
+  const hues = ['#ff8fc3','#ffa255','#ffd88a','#7fe3bf','#8ccaff','#b9a0ff','#fff8ee','#fff8ee','#fff8ee'];
+  let pts = [];
+  function sizeSky() {
+    cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio;
+    pts = Array.from({ length: Math.round(innerWidth * innerHeight / 5000) }, () => ({
+      x: Math.random() * cv.width, y: Math.random() * cv.height, r: (Math.random() ** 3 * 1.8 + .3) * devicePixelRatio,
+      c: hues[Math.floor(Math.random() * hues.length)], p: Math.random() * 6.28, s: .5 + Math.random() * 1.5
+    }));
+  }
+  function drawSky(t) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const s of pts) {
+      ctx.globalAlpha = reduce ? .7 : .35 + .65 * (0.5 + 0.5 * Math.sin(t / 1000 * s.s + s.p));
+      ctx.fillStyle = s.c; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.28); ctx.fill();
+    }
+    if (!reduce) requestAnimationFrame(drawSky);
+  }
+  sizeSky(); requestAnimationFrame(drawSky); addEventListener('resize', sizeSky);
+
+  /* ---------- map data (fictional) ---------- */
+  const V = [80, 200, 330, 470, 600, 720], H = [80, 150, 260, 380, 500];
+  const litV = { 80: .4, 200: 1, 330: .25, 470: .7, 600: .3, 720: .45 };
+  const litH = { 80: .9, 150: .35, 260: .75, 380: .3, 500: .55 };
+  const gStreets = document.getElementById('streets'), gLights = document.getElementById('lights');
+  const segs = [];
+  V.forEach(x => segs.push({ x1: x, y1: 40, x2: x, y2: 540, lit: litV[x] }));
+  H.forEach(y => segs.push({ x1: 40, y1: y, x2: 760, y2: y, lit: litH[y] }));
+  segs.push({ x1: 330, y1: 380, x2: 470, y2: 260, lit: .05, path: true });
+  segs.forEach(s => {
+    el('line', { ...s, class: s.path ? '' : 'street', stroke: s.path ? '#2b4a40' : null, 'stroke-width': s.path ? 3 : null, 'stroke-dasharray': s.path ? '4 6' : null }, gStreets);
+    if (!s.path) el('line', { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, class: 'street-core' }, gStreets);
+  });
+  // seeded random so the mock is stable
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const lightCols = ['#ffd88a', '#ffe9c2', '#ffb98a', '#fff8ee'];
+  segs.forEach(s => {
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1), step = 34;
+    for (let d = 14; d < len; d += step) {
+      const on = rnd() < s.lit + .08; if (!on && rnd() > .3) continue;
+      const t = d / len, x = s.x1 + (s.x2 - s.x1) * t + (s.x1 === s.x2 ? 9 : 0), y = s.y1 + (s.y2 - s.y1) * t + (s.y1 === s.y2 ? -9 : 0);
+      const g = el('g', { class: 'light', tabindex: 0, 'data-tip': on ? `<b>Streetlight · working</b>LED · ~${Math.round(18 + s.lit * 30)} lux at curb` : `<b>Streetlight · out</b>Reported via 311 · 2 days ago`, 'data-lit': s.lit }, gLights);
+      if (on) {
+        const r = 3 + s.lit * 9;
+        el('circle', { cx: x, cy: y, r: r * 1.6, fill: lightCols[Math.floor(rnd() * 4)], opacity: .18 + s.lit * .25, filter: 'url(#soft)' }, g);
+        el('use', { href: '#spark', x: x - r / 2, y: y - r / 2, width: r, height: r, fill: '#fff8ee' }, g);
+      } else {
+        el('circle', { cx: x, cy: y, r: 2.2, fill: 'none', stroke: '#6b5a7d', 'stroke-width': 1 }, g);
+      }
+    }
+  });
+
+  const shops = [[200,430,'Luna Laundromat','24h'],[200,330,'Halcyon Pharmacy','till 2am'],[200,200,'Pho Saigon','till 1am'],[200,112,'Corner Market','24h'],[310,80,'Bodega Sol','till 3am'],[530,80,'Night Owl Diner','24h'],[470,210,'Cinema Bar','till 1am'],[150,500,'Taqueria Estrella','till midnight']];
+  const gShops = document.getElementById('shops');
+  shops.forEach(([x, y, n, h]) => {
+    const g = el('g', { 'data-tip': `<b>Open · ${h}</b>${n}`, tabindex: 0, 'data-close': h }, gShops);
+    el('rect', { x: x - 14, y: y - 4, width: 8, height: 8, rx: 2, class: 'shop', transform: `rotate(45 ${x - 10} ${y})` }, g);
+  });
+
+  const incidents = [[395,315,'Harassment','3 days ago'],[425,340,'Theft','9 days ago'],[340,450,'Followed (community)','2 weeks ago'],[580,150,'Assault','11 days ago'],[345,262,'Catcalling (community)','5 days ago'],[620,500,'Theft','20 days ago']];
+  const gInc = document.getElementById('incidents');
+  incidents.forEach(([x, y, k, w]) => {
+    const g = el('g', { 'data-tip': `<b>Report · ${w}</b>${k}`, tabindex: 0 }, gInc);
+    el('circle', { cx: x, cy: y, r: 9, class: 'incident', opacity: .5 }, g);
+    el('circle', { cx: x, cy: y, r: 3, class: 'incident-core' }, g);
+  });
+
+  /* ---------- routes ---------- */
+  const routes = [
+    { id: 'fast', name: 'Shortcut', tag: 'Through Mercer Park', color: '#ff7a66', min: 14, light: 38, active: 41, reports: 4,
+      pts: [[80,500],[330,500],[330,380],[470,260],[470,150],[600,150],[600,80],[720,80]] },
+    { id: 'bal', name: 'Balanced', tag: 'Valencia → Lantern St', color: '#b9a0ff', min: 17, light: 74, active: 70, reports: 1,
+      pts: [[80,500],[200,500],[200,260],[470,260],[470,80],[720,80]] },
+    { id: 'bright', name: 'Brightest', tag: 'Valencia → Halcyon, all lit', color: 'url(#beamGrad)', swatch: '#ffd88a', min: 21, light: 96, active: 92, reports: 0,
+      pts: [[80,500],[200,500],[200,80],[720,80]] }
+  ];
+  const gRoutes = document.getElementById('routes'), gNodes = document.getElementById('nodes');
+  const list = document.getElementById('route-list');
+  routes.forEach(r => {
+    r.d = 'M' + r.pts.map(p => p.join(' ')).join(' L');
+    r.ghost = el('path', { d: r.d, class: 'route route-ghost', stroke: r.swatch || r.color, 'data-route': r.id }, gRoutes);
+    r.halo = el('path', { d: r.d, class: 'route-halo', stroke: r.swatch || r.color }, gRoutes);
+    r.main = el('path', { d: r.d, class: 'route route-active', stroke: r.color, opacity: 0 }, gRoutes);
+    r.nodeG = el('g', { class: 'node', opacity: 0 }, gNodes);
+    r.pts.slice(1, -1).forEach(([x, y]) => {
+      el('circle', { cx: x, cy: y, r: 10, fill: r.swatch || r.color, opacity: .25, filter: 'url(#soft)' }, r.nodeG);
+      el('use', { href: '#spark', x: x - 8, y: y - 8, width: 16, height: 16, fill: '#fff8ee' }, r.nodeG);
+    });
+    r.ghost.addEventListener('click', () => select(r.id));
+
+    const c = document.createElement('button');
+    c.className = 'route-card'; c.type = 'button'; c.setAttribute('aria-pressed', 'false');
+    c.style.setProperty('--rc', r.swatch || r.color);
+    c.innerHTML = `
+      <div class="rc-top"><span class="rc-name">${r.name}<span class="rec-badge">Recommended</span></span><span class="rc-time">${r.min} min</span></div>
+      <span class="rc-tag">${r.tag}</span>
+      <div class="bars">
+        <div class="bar"><span>Light</span><span class="track"><span class="fill" style="--c:var(--butter)" data-w="${r.light}"></span></span><span>${r.light}%</span></div>
+        <div class="bar"><span>Activity</span><span class="track"><span class="fill" style="--c:var(--mint)" data-w="${r.active}"></span></span><span>${r.active}%</span></div>
+        <div class="bar"><span>Reports</span><span class="track"><span class="fill" style="--c:var(--coral)" data-w="${r.reports * 20}"></span></span><span>${r.reports}</span></div>
+      </div>`;
+    c.addEventListener('click', () => select(r.id));
+    r.card = c; list.appendChild(c);
+  });
+  const note = document.createElement('p');
+  note.className = 'route-note'; note.id = 'route-note';
+  list.appendChild(note);
+
+  let current = null, walkT = 0, walkRAF;
+  function select(id) {
+    current = routes.find(r => r.id === id);
+    routes.forEach(r => {
+      const on = r === current;
+      r.main.setAttribute('opacity', on ? 1 : 0);
+      r.halo.style.opacity = on ? .45 : 0;
+      r.ghost.style.opacity = on ? 0 : '';
+      r.nodeG.setAttribute('opacity', on ? 1 : 0);
+      r.card.setAttribute('aria-pressed', on);
+      r.card.querySelectorAll('.fill').forEach(f => f.style.width = on ? f.dataset.w + '%' : '0%');
+    });
+    drawIn(current.main);
+    walk();
+    const extra = current.min - routes[0].min;
+    note.innerHTML = current.id === 'fast'
+      ? `<strong>Heads up:</strong> this cuts through Mercer Park, which has 0 working lights after 10pm and 2 recent reports.`
+      : `<strong>+${extra} min</strong> versus the shortcut, but passes ${current.id === 'bright' ? '6' : '3'} open businesses and ${current.light}% lit sidewalk.`;
+  }
+  function drawIn(path) {
+    if (reduce) return;
+    const L = path.getTotalLength();
+    path.style.transition = 'none'; path.style.strokeDasharray = L; path.style.strokeDashoffset = L;
+    path.getBoundingClientRect();
+    path.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.5,0,.2,1)'; path.style.strokeDashoffset = 0;
+  }
+  const walker = document.getElementById('walker');
+  function walk() {
+    cancelAnimationFrame(walkRAF);
+    if (reduce) { walker.setAttribute('opacity', 0); return; }
+    walker.setAttribute('opacity', 1);
+    const p = current.main, L = p.getTotalLength(); walkT = 0;
+    const tick = () => {
+      walkT = (walkT + 1.4) % L;
+      const pt = p.getPointAtLength(walkT);
+      walker.setAttribute('cx', pt.x); walker.setAttribute('cy', pt.y);
+      walkRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // speed ↔ glow slider picks the recommendation
+  const glow = document.getElementById('glow');
+  function recommend() {
+    const v = +glow.value, id = v < 30 ? 'fast' : v < 65 ? 'bal' : 'bright';
+    routes.forEach(r => r.card.classList.toggle('recommended', r.id === id));
+    return id;
+  }
+  glow.addEventListener('input', () => select(recommend()));
+  document.getElementById('draw').addEventListener('click', () => { select(recommend()); document.getElementById('map-sec').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); });
+  select(recommend());
+
+  // chips
+  document.querySelectorAll('.planner .chip').forEach(b => b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on);
+    if (b.dataset.pref === 'share') document.getElementById('share-switch').setAttribute('aria-checked', on), updateLive();
+  }));
+  document.querySelectorAll('.layers .chip').forEach(b => b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on);
+    document.getElementById(b.dataset.layer).classList.toggle('layer-off', !on);
+  }));
+
+  // clock: later = fewer shops open, sky shifts
+  const times = ['10:00 pm','10:30 pm','11:00 pm','11:30 pm','12:00 am','12:30 am','1:00 am','2:00 am','3:00 am'];
+  const closeIdx = { 'till midnight': 4, 'till 1am': 6, 'till 2am': 7, 'till 3am': 8, '24h': 99 };
+  const clock = document.getElementById('clock'), out = document.getElementById('clock-out'), sky = document.querySelector('.sky');
+  function setClock() {
+    const i = +clock.value; out.textContent = times[i];
+    gShops.querySelectorAll('g').forEach(g => g.style.opacity = i >= closeIdx[g.dataset.close] ? .12 : 1);
+    const k = i / 8;
+    sky.style.background = `radial-gradient(1200px 700px at 85% -10%, hsl(${300 - k * 40} 30% ${20 - k * 8}%) 0%, transparent 60%), radial-gradient(900px 600px at -10% 40%, hsl(${270 - k * 20} 30% ${16 - k * 6}%) 0%, transparent 60%), var(--night-1)`;
+  }
+  clock.addEventListener('input', setClock); setClock();
+
+  // tooltips
+  const tip = document.getElementById('tip'), card = document.querySelector('.map-card'), svg = document.getElementById('map');
+  function showTip(target) {
+    const host = target.closest('[data-tip]'); if (!host) return;
+    const b = host.getBBox(), m = svg.getScreenCTM(), cr = card.getBoundingClientRect();
+    const pt = svg.createSVGPoint(); pt.x = b.x + b.width / 2; pt.y = b.y;
+    const s = pt.matrixTransform(m);
+    tip.innerHTML = host.dataset.tip; tip.style.left = (s.x - cr.left) + 'px'; tip.style.top = (s.y - cr.top) + 'px'; tip.classList.add('show');
+  }
+  svg.addEventListener('pointerover', e => showTip(e.target));
+  svg.addEventListener('focusin', e => showTip(e.target));
+  svg.addEventListener('pointerout', () => tip.classList.remove('show'));
+  svg.addEventListener('focusout', () => tip.classList.remove('show'));
+
+  // factors accordion
+  document.querySelectorAll('.factor').forEach(f => f.addEventListener('click', () => {
+    const open = f.getAttribute('aria-expanded') !== 'true';
+    f.setAttribute('aria-expanded', open); f.querySelector('.toggle').textContent = open ? '– inputs' : '+ inputs';
+  }));
+
+  /* ---------- friend constellation ---------- */
+  const fsvg = document.getElementById('friends');
+  const fcols = ['#ff8fc3', '#7fe3bf', '#ffa255', '#8ccaff', '#b9a0ff', '#ffd88a', '#ff7a66'];
+  const friends = ['Maya', 'Priya', 'Jo'];
+  const shareSwitch = document.getElementById('share-switch');
+  function updateLive() {
+    const on = shareSwitch.getAttribute('aria-checked') === 'true';
+    document.getElementById('live-label').textContent = on ? `Sharing with ${friends.length}` : 'Not sharing';
+    document.getElementById('live-label').style.color = on ? '' : 'var(--text-faint)';
+    renderFriends();
+  }
+  function tendril(x1, y1, x2, y2, col, i) {
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = y2 - y1, dy = x1 - x2, k = (i % 2 ? 1 : -1) * .12;
+    return el('path', { d: `M${x1} ${y1} Q ${mx + dx * k} ${my + dy * k} ${x2} ${y2}`, class: 'tendril', stroke: col, 'stroke-width': 1.6, opacity: .85 });
+  }
+  function renderFriends() {
+    fsvg.innerHTML = '';
+    const on = shareSwitch.getAttribute('aria-checked') === 'true';
+    const cx = 200, cy = 190, n = friends.length;
+    const pos = friends.map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n + .3, R = 120 + (i % 2) * 22; return [cx + Math.cos(a) * R, cy + Math.sin(a) * R]; });
+    // ring links between friends
+    if (n > 2) pos.forEach((p, i) => { const q = pos[(i + 1) % n]; const t = tendril(p[0], p[1], q[0], q[1], '#4d3f60', i); t.setAttribute('stroke-dasharray', '2 6'); fsvg.appendChild(t); });
+    pos.forEach(([x, y], i) => {
+      const col = fcols[i % fcols.length];
+      if (on) for (let j = 0; j < 3; j++) { const t = tendril(cx, cy, x + (j - 1) * 3, y + (j - 1) * 3, [col, '#fff8ee', fcols[(i + 2) % 7]][j], i + j); t.setAttribute('opacity', [.9, .35, .5][j]); t.setAttribute('stroke-width', [1.8, 1, 1.2][j]); fsvg.appendChild(t);
+        if (!reduce) { const L = t.getTotalLength(); t.style.strokeDasharray = L; t.style.strokeDashoffset = L; t.getBoundingClientRect(); t.style.transition = 'stroke-dashoffset .9s ease ' + (i * .08) + 's'; t.style.strokeDashoffset = 0; } }
+      el('circle', { cx: x, cy: y, r: 14, fill: col, opacity: .22, filter: 'url(#fsoft)' }, fsvg);
+      el('circle', { cx: x, cy: y, r: 6, fill: '#fff8ee' }, fsvg);
+      el('circle', { cx: x, cy: y, r: 3, fill: col }, fsvg);
+      el('text', { x, y: y + 28, 'text-anchor': 'middle', class: 'fname' }, fsvg).textContent = friends[i];
+    });
+    // center = you
+    const defs = el('defs', {}, fsvg); const f = el('filter', { id: 'fsoft', x: '-200%', y: '-200%', width: '500%', height: '500%' }, defs); el('feGaussianBlur', { stdDeviation: 5 }, f);
+    el('circle', { cx, cy, r: 30, fill: '#ff8fc3', opacity: .25, filter: 'url(#fsoft)' }, fsvg);
+    el('path', { d: `M${cx} ${cy - 22}C${cx + 1.5} ${cy - 5} ${cx + 5} ${cy - 1.5} ${cx + 22} ${cy}C${cx + 5} ${cy + 1.5} ${cx + 1.5} ${cy + 5} ${cx} ${cy + 22}C${cx - 1.5} ${cy + 5} ${cx - 5} ${cy + 1.5} ${cx - 22} ${cy}C${cx - 5} ${cy - 1.5} ${cx - 1.5} ${cy - 5} ${cx} ${cy - 22}Z`, fill: '#fff8ee' }, fsvg);
+    el('text', { x: cx, y: cy + 42, 'text-anchor': 'middle', class: 'fname', style: 'fill:#fff8ee' }, fsvg).textContent = 'You';
+  }
+  document.querySelectorAll('.switch').forEach(s => s.addEventListener('click', () => {
+    s.setAttribute('aria-checked', s.getAttribute('aria-checked') !== 'true');
+    if (s === shareSwitch) { document.querySelector('[data-pref="share"]').setAttribute('aria-pressed', s.getAttribute('aria-checked')); updateLive(); }
+  }));
+  document.getElementById('add-friend').addEventListener('submit', () => {
+    const inp = document.getElementById('friend-name'), v = inp.value.trim();
+    if (!v || friends.length >= 7) return; friends.push(v); inp.value = ''; updateLive();
+  });
+  updateLive();
+})();
+</script>
+</body>
+</html>
