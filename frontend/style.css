@@ -6,6 +6,8 @@
   --star: #ffd88a;
   --pin-from: #4ade80;
   --pin-to: #f472b6;
+  --route-lit: #7fd4ff;
+  --route-shortest: #b4bccd;
 }
 
 html, body {
@@ -53,6 +55,55 @@ html, body {
 }
 
 #card #status:empty {
+  display: none;
+}
+
+#stats {
+  margin-top: 10px;
+}
+
+#stats table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stats th,
+#stats td {
+  padding: 3px 0;
+  text-align: right;
+}
+
+#stats tbody th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding-right: 12px;
+}
+
+#stats thead th {
+  font-size: 12px;
+  font-weight: 600;
+  padding-left: 12px;
+}
+
+#stats .col-lit {
+  color: var(--route-lit);
+}
+
+#stats .col-shortest {
+  color: var(--route-shortest);
+}
+
+#notes {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#notes:empty {
   display: none;
 }
 

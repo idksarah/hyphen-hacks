@@ -14,6 +14,22 @@
     <h1>Safe-Light Constellations</h1>
     <p id="lamp-count">Loading lamps…</p>
     <p id="status" aria-live="polite"></p>
+
+    <div id="stats" hidden>
+      <table>
+        <thead>
+          <tr><th></th><th class="col-lit">Lit route</th><th class="col-shortest">Shortest</th></tr>
+        </thead>
+        <tbody>
+          <tr><th>Time</th><td data-route="lit" data-stat="minutes"></td><td data-route="shortest" data-stat="minutes"></td></tr>
+          <tr><th>Distance</th><td data-route="lit" data-stat="length"></td><td data-route="shortest" data-stat="length"></td></tr>
+          <tr><th>Lit</th><td data-route="lit" data-stat="lit"></td><td data-route="shortest" data-stat="lit"></td></tr>
+          <tr><th>Longest dark gap</th><td data-route="lit" data-stat="gap"></td><td data-route="shortest" data-stat="gap"></td></tr>
+        </tbody>
+      </table>
+      <ul id="notes"></ul>
+    </div>
+
     <button id="reset" type="button" hidden>Clear points</button>
   </div>
 

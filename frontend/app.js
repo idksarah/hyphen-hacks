@@ -152,11 +152,9 @@ async function requestRoute() {
   if (id !== routeRequest) return;
 
   showRoute(result.data);
-  const lit = result.data.routes.lit;
-  setStatus(
-    (result.mock ? "Mock route (backend offline). " : "") +
-    `Lit route: ${Math.round(lit.length_m)} m, ${Math.round(lit.lit_frac * 100)}% lit.`
-  );
+  showStats(result.data, result.mock);
+  setStatus("");
+  fitRoutes(result.data); // after the stats card has grown to its final size
 }
 
 // Returns { data, mock }. Throws an Error with a human-readable message.
@@ -187,38 +185,159 @@ async function fetchMock() {
   throw new Error("Backend offline and no mock route found.");
 }
 
-// ---- Drawing routes (placeholder lines; full rendering is todo #4) ---------
+// ---- Drawing routes ----------------------------------------------------------
+
+const ROUTE_COLORS = {
+  lit: "#7fd4ff",
+  shortest: "#8a93a8",
+  gap: "#ff4d5e",
+  constellation: "#fff1c9",
+};
 
 function addRouteLayers() {
-  map.addSource("route-shortest", { type: "geojson", data: emptyFC() });
-  map.addSource("route-lit", { type: "geojson", data: emptyFC() });
-  // Below the stars so lamps stay visible on top of the route.
+  for (const id of ["route-shortest", "route-lit", "dark-gaps", "constellation"]) {
+    map.addSource(id, { type: "geojson", data: emptyFC() });
+  }
+
+  // Street paths and gaps sit below the lamp stars...
   map.addLayer({
     id: "route-shortest",
     type: "line",
     source: "route-shortest",
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#8a93a8", "line-width": 3, "line-dasharray": [1, 2] },
+    paint: { "line-color": ROUTE_COLORS.shortest, "line-width": 3, "line-dasharray": [1, 2] },
   }, "lamp-halo");
   map.addLayer({
     id: "route-lit",
     type: "line",
     source: "route-lit",
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#7fd4ff", "line-width": 4, "line-opacity": 0.85 },
+    paint: { "line-color": ROUTE_COLORS.lit, "line-width": 5, "line-opacity": 0.35 },
   }, "lamp-halo");
+  map.addLayer({
+    id: "dark-gaps",
+    type: "line",
+    source: "dark-gaps",
+    layout: { "line-cap": "round" },
+    paint: { "line-color": ROUTE_COLORS.gap, "line-width": 5, "line-opacity": 0.85 },
+  }, "lamp-halo");
+
+  // ...and the constellation sits on top of them.
+  map.addLayer({
+    id: "constellation-lines",
+    type: "line",
+    source: "constellation",
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": ROUTE_COLORS.constellation, "line-width": 1.2, "line-opacity": 0.8 },
+  });
+  map.addLayer({
+    id: "constellation-glow",
+    type: "circle",
+    source: "constellation",
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: { "circle-color": STAR_COLOR, "circle-radius": 11, "circle-blur": 1, "circle-opacity": 0.7 },
+  });
+  map.addLayer({
+    id: "constellation-stars",
+    type: "circle",
+    source: "constellation",
+    filter: ["==", ["geometry-type"], "Point"],
+    paint: { "circle-color": "#ffffff", "circle-radius": 3.5 },
+  });
 }
 
 function showRoute(data) {
-  map.getSource("route-shortest").setData(data ? lineFC(data.routes.shortest.coords) : emptyFC());
-  map.getSource("route-lit").setData(data ? lineFC(data.routes.lit.coords) : emptyFC());
+  if (!data) {
+    for (const id of ["route-shortest", "route-lit", "dark-gaps", "constellation"]) {
+      map.getSource(id).setData(emptyFC());
+    }
+    document.getElementById("stats").hidden = true;
+    return;
+  }
+
+  const { lit, shortest } = data.routes;
+  map.getSource("route-shortest").setData(lineFC(shortest.coords));
+  map.getSource("route-lit").setData(lineFC(lit.coords));
+  map.getSource("dark-gaps").setData({
+    type: "FeatureCollection",
+    features: [...lit.dark_gaps, ...shortest.dark_gaps].map((g) => lineFeature(g.coords)),
+  });
+  map.getSource("constellation").setData(constellationFC(lit));
+}
+
+// Zoom to both routes, keeping them clear of the card in the top-left.
+function fitRoutes(data) {
+  const bounds = new maplibregl.LngLatBounds();
+  for (const c of [...data.routes.lit.coords, ...data.routes.shortest.coords]) bounds.extend(c);
+  const card = document.getElementById("card").getBoundingClientRect();
+  map.fitBounds(bounds, {
+    padding: { top: card.bottom + 24, bottom: 48, left: 48, right: 48 },
+    maxZoom: 16,
+  });
+}
+
+// Lamp vertices joined in walking order. Contract: constellation is empty when
+// the route passes fewer than 2 lamps, so fall back to the street geometry.
+function constellationFC(route) {
+  const pts = route.constellation.map((s) => s.coord);
+  const line = pts.length >= 2 ? pts : route.coords;
+  return {
+    type: "FeatureCollection",
+    features: [
+      lineFeature(line),
+      ...route.constellation.map((s) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: s.coord },
+        properties: { id: s.id },
+      })),
+    ],
+  };
+}
+
+// ---- Stats card -------------------------------------------------------------
+
+function showStats(data, mock) {
+  for (const name of ["lit", "shortest"]) {
+    const r = data.routes[name];
+    setStat(name, "minutes", `${Math.round(r.minutes)} min`);
+    setStat(name, "length", formatDistance(r.length_m));
+    setStat(name, "lit", `${Math.round(r.lit_frac * 100)}%`);
+    setStat(name, "gap", r.max_gap_m >= 1 ? `${Math.round(r.max_gap_m)} m` : "none");
+  }
+
+  const notes = [];
+  if (mock) notes.push("Showing a sample route: the routing server is offline.");
+  if (data.detour_capped) notes.push("No well-lit route found within a reasonable detour; showing the best compromise.");
+  if (data.same_route) notes.push("The shortest route is already the best-lit one.");
+  else {
+    const extra = Math.round(data.routes.lit.minutes - data.routes.shortest.minutes);
+    if (extra > 0) notes.push(`The lit route adds about ${extra} min.`);
+  }
+  if (data.alpha_used < data.request.alpha) {
+    notes.push(`Lighting preference relaxed from ${data.request.alpha} to ${data.alpha_used} to keep the detour reasonable.`);
+  }
+  document.getElementById("notes").replaceChildren(
+    ...notes.map((t) => Object.assign(document.createElement("li"), { textContent: t }))
+  );
+  document.getElementById("stats").hidden = false;
+}
+
+function setStat(route, stat, text) {
+  document.querySelector(`[data-route="${route}"][data-stat="${stat}"]`).textContent = text;
+}
+
+function formatDistance(m) {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+}
+
+// ---- Helpers ------------------------------------------------------------------
+
+function lineFeature(coords) {
+  return { type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} };
 }
 
 function lineFC(coords) {
-  return {
-    type: "FeatureCollection",
-    features: [{ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} }],
-  };
+  return { type: "FeatureCollection", features: [lineFeature(coords)] };
 }
 
 function emptyFC() {
