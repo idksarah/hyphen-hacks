@@ -18,6 +18,7 @@
   --mint: #7fe3bf;
   --sky: #8ccaff;
   --lilac: #b9a0ff;
+  --gray: #a39fae;           /* the shortest, least-lit route */
   --beam: linear-gradient(90deg, var(--rose), var(--coral), var(--tangerine), var(--butter), var(--mint), var(--sky), var(--lilac));
   --ink: #1b1722;
 

@@ -19,10 +19,10 @@ const C = {
   night1: "#140e1a", night2: "#1e1627", night3: "#2a2035", border: "#4d3f60",
   text: "#f7efe4", faint: "#9a8aab", cream: "#fff8ee",
   coral: "#ff7a66", rose: "#ff8fc3", tangerine: "#ffa255", butter: "#ffd88a",
-  mint: "#7fe3bf", sky: "#8ccaff", lilac: "#b9a0ff",
+  mint: "#7fe3bf", sky: "#8ccaff", lilac: "#b9a0ff", gray: "#a39fae",
   lightOut: "#7d6a92", park: "#1a2a26", street: "#3e3150",
 };
-const ROUTE_COLOR = { lit: C.butter, shortest: C.lilac };
+const ROUTE_COLOR = { lit: C.butter, shortest: C.gray };
 
 const statusEl = document.getElementById("status");
 const routesEl = document.getElementById("routes");
@@ -68,7 +68,16 @@ map.on("load", async () => {
   addOutageLayers();
   addRouteLayers();
 
-  map.on("click", (e) => pickPoint([e.lngLat.lng, e.lngLat.lat]));
+  map.on("click", (e) => {
+    // Tapping a drawn route switches to it instead of dropping a new pin.
+    const hit = routeAt(e.point);
+    if (hit) selectRoute(hit);
+    else pickPoint([e.lngLat.lng, e.lngLat.lat]);
+  });
+  for (const name of ROUTES) {
+    map.on("mouseenter", `${name}-hit`, () => (map.getCanvas().style.cursor = "pointer"));
+    map.on("mouseleave", `${name}-hit`, () => (map.getCanvas().style.cursor = ""));
+  }
   document.getElementById("reset").addEventListener("click", resetPicks);
   outagesBox.addEventListener("change", () => {
     if (picks.from && picks.to) requestRoute();
@@ -366,12 +375,13 @@ function addRouteLayers() {
   const round = { "line-cap": "round", "line-join": "round" };
   for (const name of ROUTES) {
     const color = ROUTE_COLOR[name];
+    // The route that isn't selected: solid but dimmer, so both read side by side.
     map.addLayer({
       id: `${name}-ghost`,
       type: "line",
       source: `route-${name}`,
       layout: round,
-      paint: { "line-color": color, "line-width": 2.5, "line-opacity": 0.55, "line-dasharray": [0.5, 3.5] },
+      paint: { "line-color": color, "line-width": 4, "line-opacity": 0.5 },
     });
     map.addLayer({
       id: `${name}-halo`,
@@ -392,6 +402,17 @@ function addRouteLayers() {
               0, C.rose, 0.2, C.coral, 0.4, C.tangerine, 0.6, C.butter, 0.8, C.mint, 1, C.sky],
           }
         : { "line-color": color, "line-width": 5 },
+    });
+  }
+
+  // Invisible wide lines so either route is easy to tap.
+  for (const name of ROUTES) {
+    map.addLayer({
+      id: `${name}-hit`,
+      type: "line",
+      source: `route-${name}`,
+      layout: round,
+      paint: { "line-color": "#000", "line-width": 22, "line-opacity": 0 },
     });
   }
 
@@ -445,8 +466,8 @@ function showRoute(data) {
   selectRoute(data.same_route ? "lit" : activeRoute);
 }
 
-// The active route is drawn solid with a halo, its dark gaps and constellation;
-// the other is a dashed ghost you can switch to from its card.
+// The active route is drawn on top with a halo, its dark gaps and constellation;
+// the other stays visible as a dimmer line. Switch by tapping either route or its card.
 function selectRoute(name) {
   activeRoute = name;
   for (const n of ROUTES) {
@@ -456,6 +477,8 @@ function selectRoute(name) {
     map.setLayoutProperty(`${n}-main`, "visibility", on ? "visible" : "none");
     document.querySelector(`.route-card[data-route="${n}"]`).setAttribute("aria-pressed", on);
   }
+  map.moveLayer(`${name}-halo`, "shortest-hit"); // above the other route, below gaps and stars
+  map.moveLayer(`${name}-main`, "shortest-hit");
   if (!routeData) return;
   const route = routeData.routes[name];
   map.getSource("dark-gaps").setData({
@@ -463,6 +486,17 @@ function selectRoute(name) {
     features: route.dark_gaps.map((g) => lineFeature(g.coords)),
   });
   map.getSource("constellation").setData(constellationFC(route, ROUTE_COLOR[name]));
+}
+
+// Which route is under a map click, if any. Where the two routes share a
+// street, the tap switches to the one that isn't selected.
+function routeAt(point) {
+  if (!routeData) return null;
+  const layers = ROUTES.filter((n) => n === "lit" || !routeData.same_route).map((n) => `${n}-hit`);
+  const hit = new Set(map.queryRenderedFeatures(point, { layers }).map((f) => f.layer.id.replace("-hit", "")));
+  if (hit.size === 0) return null;
+  if (hit.size === 1) return [...hit][0];
+  return ROUTES.find((n) => n !== activeRoute);
 }
 
 // Lamp vertices joined in walking order. Contract: constellation is empty when
