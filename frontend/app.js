@@ -6,9 +6,8 @@ const LAMPS_URL = "../data/lamps.geojson";
 const DEAD_URL = "../data/dead_lamps.json"; // optional; skipped if missing
 const BASEMAP = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
-// Contract 4: Sarah's API. If it's not running, fall back to her mock response.
+// Contract 4: Sarah's routing server (backend/server.py → backend/routing.py).
 const API_URL = "http://localhost:8000";
-const MOCK_URL = "../mocks/route_response.json";
 
 // Address search. Nominatim's usage policy: at most 1 request per second and no
 // search-as-you-type, so we only search when the user presses Enter.
@@ -65,6 +64,7 @@ map.on("load", async () => {
   for (const f of lamps.features) f.properties.dead = deadIds.has(f.properties.id);
 
   namedLamps = lamps.features.filter((f) => f.properties.street);
+  for (const f of namedLamps) lampStreet.set(f.properties.id, titleCase(f.properties.street));
 
   map.addSource("lamps", { type: "geojson", data: lamps });
   map.addSource("unmatched-outages", { type: "geojson", data: unmatchedFC(dead) });
@@ -72,19 +72,25 @@ map.on("load", async () => {
   addOutageLayers();
   addRouteLayers();
 
-  map.on("click", (e) => pickPoint([e.lngLat.lng, e.lngLat.lat]));
-  for (const which of ["from", "to"]) setUpSearch(which);
-  document.getElementById("reset").addEventListener("click", resetPicks);
-  outagesBox.addEventListener("change", () => {
-    if (picks.from && picks.to) requestRoute();
+  map.on("click", onMapClick);
+  for (const name of ROUTES) {
+    map.on("mouseenter", `${name}-ghost`, () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", `${name}-ghost`, () => { map.getCanvas().style.cursor = ""; });
+  }
+  document.getElementById("add-stop").addEventListener("click", () => addStop());
+  document.getElementById("swap").addEventListener("click", () => {
+    stops.reverse();
+    renderStops();
+    updateRoute();
   });
-  alphaSlider.addEventListener("change", () => {
-    if (picks.from && picks.to) requestRoute();
-  });
+  document.getElementById("clear").addEventListener("click", clearStops);
+  outagesBox.addEventListener("change", updateRoute);
+  alphaSlider.addEventListener("change", updateRoute);
   for (const card of document.querySelectorAll(".route-card")) {
     card.addEventListener("click", () => selectRoute(card.dataset.route));
   }
-  setStatus("Search for an address or tap the map.");
+  renderStops();
+  setStatus(HINT);
 });
 
 // ---- Basemap and lamps ----------------------------------------------------------
@@ -216,60 +222,204 @@ function unmatchedFC(dead) {
   };
 }
 
-// ---- Start/end picking ----------------------------------------------------------
+// ---- Stops ------------------------------------------------------------------------
+// An ordered list of stops, like Google Maps directions. The route goes through
+// every stop that has a point, in order; each consecutive pair is one /route leg.
 
-const picks = { from: null, to: null };
+const MAX_STOPS = 10;
+const HINT = "Search for a place or tap the map.";
+
+let nextStopId = 1;
+let stops = [newStop(), newStop()];
 let namedLamps = []; // lamps with a street name, for labelling picked points
+const lampStreet = new Map(); // lamp id → street name, for "via …"
 let routeRequest = 0; // ignore responses from superseded requests
+let dragFrom = null; // index of the stop row being dragged
 
-// Map taps fill the first empty field; once both are set, a tap starts over.
-function pickPoint(lonLat) {
-  if (!inSF(lonLat)) {
-    setStatus("That's outside San Francisco.");
-    return;
+function newStop() {
+  return { id: nextStopId++, lonLat: null, label: "", marker: null };
+}
+
+const letter = (i) => String.fromCharCode(65 + i); // A, B, C…
+
+function placeholder(i) {
+  if (i === 0) return "Choose starting point, or tap the map";
+  if (i === stops.length - 1) return "Choose destination";
+  return "Choose stop";
+}
+
+function renderStops() {
+  const list = document.getElementById("stops");
+  list.replaceChildren(...stops.map(stopRow));
+  document.getElementById("swap").hidden = stops.length !== 2;
+  document.getElementById("add-stop").hidden = stops.length >= MAX_STOPS;
+  updateMarkers();
+}
+
+function stopRow(stop, i) {
+  const li = document.createElement("li");
+  li.className = "stop";
+  li.dataset.id = stop.id;
+
+  const handle = document.createElement("span");
+  handle.className = `stop-icon ${stopKind(i)}`;
+  handle.textContent = letter(i);
+  handle.draggable = true;
+  handle.title = "Drag to reorder";
+
+  const form = document.createElement("form");
+  form.className = "stop-form";
+  form.setAttribute("role", "search");
+  const input = document.createElement("input");
+  Object.assign(input, {
+    type: "search", value: stop.label, placeholder: placeholder(i), autocomplete: "off",
+  });
+  input.setAttribute("enterkeyhint", "search");
+  input.setAttribute("aria-label", `Stop ${letter(i)}`);
+  form.append(input);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    search(stop, input.value.trim());
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") showResults(stop, null);
+  });
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "stop-remove";
+  remove.setAttribute("aria-label", `Remove stop ${letter(i)}`);
+  remove.textContent = "✕";
+  remove.hidden = stops.length <= 2;
+  remove.addEventListener("click", () => removeStop(stop.id));
+
+  const results = document.createElement("ul");
+  results.className = "results";
+  results.hidden = true;
+
+  li.append(handle, form, remove, results);
+
+  // Drag the letter to reorder.
+  handle.addEventListener("dragstart", (e) => {
+    dragFrom = i;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setDragImage(li, 16, 16);
+    li.classList.add("dragging");
+  });
+  handle.addEventListener("dragend", () => li.classList.remove("dragging"));
+  li.addEventListener("dragover", (e) => {
+    if (dragFrom === null) return;
+    e.preventDefault();
+    li.classList.add("drop-target");
+  });
+  li.addEventListener("dragleave", () => li.classList.remove("drop-target"));
+  li.addEventListener("drop", (e) => {
+    e.preventDefault();
+    li.classList.remove("drop-target");
+    if (dragFrom !== null && dragFrom !== i) {
+      const [moved] = stops.splice(dragFrom, 1);
+      stops.splice(i, 0, moved);
+      renderStops();
+      updateRoute();
+    }
+    dragFrom = null;
+  });
+  return li;
+}
+
+function stopKind(i) {
+  return i === 0 ? "first" : i === stops.length - 1 ? "last" : "middle";
+}
+
+function stopRowEl(stop) {
+  return document.querySelector(`.stop[data-id="${stop.id}"]`);
+}
+
+function addStop(lonLat) {
+  if (stops.length >= MAX_STOPS) {
+    setStatus(`You can add up to ${MAX_STOPS} stops.`);
+    return null;
   }
-  if (picks.from && picks.to) resetPicks();
-  setPoint(picks.from ? "to" : "from", lonLat);
+  const stop = newStop();
+  stops.push(stop);
+  renderStops();
+  if (lonLat) setStopPoint(stop, lonLat);
+  else stopRowEl(stop).querySelector("input").focus();
+  return stop;
 }
 
-// Place (or move) the start or end marker. `label` comes from address search;
-// map taps and drags label the point with the nearest street instead.
-function setPoint(which, lonLat, label) {
-  if (picks[which]) picks[which].setLngLat(lonLat);
-  else picks[which] = makeMarker(which, lonLat);
-  setInput(which, label ?? nearLabel(lonLat));
-
-  if (picks.from && picks.to) requestRoute();
-  else setStatus(which === "from" ? "Now where are you going?" : "Now where are you starting?");
+function removeStop(id) {
+  const i = stops.findIndex((s) => s.id === id);
+  stops[i].marker?.remove();
+  stops.splice(i, 1);
+  renderStops();
+  updateRoute();
 }
 
-function makeMarker(which, lonLat) {
+function clearStops() {
+  for (const s of stops) s.marker?.remove();
+  stops = [newStop(), newStop()];
+  renderStops();
+  updateRoute();
+}
+
+// Map taps fill the first empty stop, or add a new final stop once all are set.
+// A tap on the other route's line switches to that route instead.
+function onMapClick(e) {
+  const box = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
+  const hit = map.queryRenderedFeatures(box, { layers: ROUTES.map((n) => `${n}-ghost`) })[0];
+  if (hit) return selectRoute(hit.layer.id.replace("-ghost", ""));
+
+  const lonLat = [e.lngLat.lng, e.lngLat.lat];
+  if (!inSF(lonLat)) return setStatus("That's outside San Francisco.");
+  const empty = stops.find((s) => !s.lonLat);
+  if (empty) setStopPoint(empty, lonLat);
+  else addStop(lonLat);
+}
+
+// Place (or move) a stop's marker. `label` comes from address search; map taps
+// and drags label the point with the nearest street instead.
+function setStopPoint(stop, lonLat, label) {
+  stop.lonLat = lonLat;
+  stop.label = label ?? nearLabel(lonLat);
+  if (stop.marker) stop.marker.setLngLat(lonLat);
+  else stop.marker = makeMarker(stop);
+  const input = stopRowEl(stop)?.querySelector("input");
+  if (input) input.value = stop.label;
+  updateMarkers();
+  updateRoute();
+}
+
+function makeMarker(stop) {
   const el = document.createElement("div");
-  el.className = `marker-${which}`;
-  el.title = which === "from" ? "Start" : "Destination";
-  if (which === "to") {
-    el.innerHTML = `<svg viewBox="-12 -12 24 24" width="30" height="30" aria-hidden="true">
-      <path d="M0 -12C.6 -3 3 -.6 12 0C3 .6 .6 3 0 12C-.6 3 -3 .6 -12 0C-3 -.6 -.6 -3 0 -12Z" fill="${C.sky}"/></svg>`;
-  }
   // Taps on a marker shouldn't also count as a map tap.
   el.addEventListener("click", (e) => e.stopPropagation());
   const marker = new maplibregl.Marker({ element: el, draggable: true })
-    .setLngLat(lonLat)
+    .setLngLat(stop.lonLat)
     .addTo(map);
   marker.on("dragend", () => {
     const { lng, lat } = marker.getLngLat();
     if (!inSF([lng, lat])) {
-      setStatus("That's outside San Francisco.");
-      return;
+      marker.setLngLat(stop.lonLat);
+      return setStatus("That's outside San Francisco.");
     }
-    setInput(which, nearLabel([lng, lat]));
-    if (picks.from && picks.to) requestRoute();
+    setStopPoint(stop, [lng, lat]);
   });
   return marker;
 }
 
-function setInput(which, text) {
-  document.getElementById(`${which}-input`).value = text;
+// Letters and colors follow list order, so refresh them after any reorder.
+// Only touch our own classes: MapLibre's marker classes position the pin at
+// its lon/lat, and replacing className drops them (pins then stack on screen).
+function updateMarkers() {
+  stops.forEach((s, i) => {
+    if (!s.marker) return;
+    const el = s.marker.getElement();
+    el.classList.remove("first", "middle", "last");
+    el.classList.add("stop-marker", stopKind(i));
+    el.textContent = letter(i);
+    el.title = s.label;
+  });
 }
 
 function nearLabel(lonLat) {
@@ -287,20 +437,7 @@ function nearestStreet([lon, lat]) {
     const d = ((x - lon) * kx) ** 2 + (y - lat) ** 2;
     if (d < bestD) [best, bestD] = [f.properties.street, d];
   }
-  return best && best.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
-}
-
-function resetPicks() {
-  picks.from?.remove();
-  picks.to?.remove();
-  picks.from = picks.to = null;
-  routeRequest++;
-  for (const which of ["from", "to"]) {
-    setInput(which, "");
-    showResults(which, null);
-  }
-  showRoute(null);
-  setStatus("Search for an address or tap the map.");
+  return best && titleCase(best);
 }
 
 function inSF([lon, lat]) {
@@ -312,23 +449,14 @@ function inSF([lon, lat]) {
 
 let nextGeocodeAt = 0; // Nominatim allows one request per second
 
-function setUpSearch(which) {
-  const form = document.getElementById(`${which}-form`);
-  const input = document.getElementById(`${which}-input`);
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const q = input.value.trim();
-    if (!q || q.startsWith("Near ") || q === "Dropped pin") return;
-    showResults(which, "Searching…");
-    try {
-      showResults(which, await geocode(q));
-    } catch {
-      showResults(which, "Search isn't working right now. Tap the map instead.");
-    }
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") showResults(which, null);
-  });
+async function search(stop, q) {
+  if (!q || q.startsWith("Near ") || q === "Dropped pin") return;
+  showResults(stop, "Searching…");
+  try {
+    showResults(stop, await geocode(q));
+  } catch {
+    showResults(stop, "Search isn't working right now. Tap the map instead.");
+  }
 }
 
 async function geocode(q) {
@@ -363,8 +491,9 @@ function placeLabel(r) {
 }
 
 // results: null hides the list, a string shows a message, an array shows matches.
-function showResults(which, results) {
-  const list = document.getElementById(`${which}-results`);
+function showResults(stop, results) {
+  const list = stopRowEl(stop)?.querySelector(".results");
+  if (!list) return;
   list.hidden = results === null;
   if (results === null) return list.replaceChildren();
 
@@ -381,9 +510,11 @@ function showResults(which, results) {
     btn.append(r.title);
     if (r.sub) btn.append(Object.assign(document.createElement("span"), { textContent: r.sub }));
     btn.addEventListener("click", () => {
-      showResults(which, null);
-      setPoint(which, r.lonLat, r.title);
-      if (!(picks.from && picks.to)) map.flyTo({ center: r.lonLat, zoom: Math.max(map.getZoom(), 15) });
+      showResults(stop, null);
+      setStopPoint(stop, r.lonLat, r.title);
+      if (stops.filter((s) => s.lonLat).length < 2) {
+        map.flyTo({ center: r.lonLat, zoom: Math.max(map.getZoom(), 15) });
+      }
     });
     li.append(btn);
     return li;
@@ -392,15 +523,30 @@ function showResults(which, results) {
 
 // ---- Fetching routes ------------------------------------------------------------
 
-async function requestRoute() {
-  const id = ++routeRequest;
-  const from = picks.from.getLngLat();
-  const to = picks.to.getLngLat();
-  setStatus("Finding a route…");
+// Route through every stop that has a point: one /route call per leg, joined.
+async function updateRoute() {
+  const placed = stops.map((s, i) => ({ s, i })).filter(({ s }) => s.lonLat);
+  if (placed.length < 2) {
+    routeRequest++;
+    showRoute(null);
+    setStatus(placed.length ? "Now choose where you're going." : HINT);
+    return;
+  }
 
-  let result;
+  const id = ++routeRequest;
+  setStatus("Finding a route…");
+  let legs;
   try {
-    result = await fetchRoute({ lng: from.lng, lat: from.lat }, { lng: to.lng, lat: to.lat });
+    legs = await Promise.all(placed.slice(1).map(async (b, k) => {
+      const a = placed[k];
+      try {
+        return await fetchRoute(a.s.lonLat, b.s.lonLat);
+      } catch (err) {
+        // Name the leg when there's more than one, e.g. "B to C: …".
+        if (placed.length > 2) err.message = `${letter(a.i)} to ${letter(b.i)}: ${err.message}`;
+        throw err;
+      }
+    }));
   } catch (err) {
     if (id !== routeRequest) return;
     showRoute(null);
@@ -409,17 +555,18 @@ async function requestRoute() {
   }
   if (id !== routeRequest) return;
 
+  const data = joinLegs(legs);
   setStatus("");
-  showRoute(result.data);
-  showStats(result.data, result.mock);
-  fitRoutes(result.data);
+  showRoute(data);
+  showStats(data);
+  fitRoutes(data);
 }
 
-// Returns { data, mock }. Throws an Error with a human-readable message.
-async function fetchRoute(from, to) {
+// Returns the Contract 4 response. Throws an Error with a human-readable message.
+async function fetchRoute([fromLon, fromLat], [toLon, toLat]) {
   const params = new URLSearchParams({
-    from_lon: from.lng, from_lat: from.lat,
-    to_lon: to.lng, to_lat: to.lat,
+    from_lon: fromLon, from_lat: fromLat,
+    to_lon: toLon, to_lat: toLat,
     alpha: (alphaSlider.value / 10).toFixed(1), // slider 0–100 → contract alpha 0–10
     outages: outagesBox.checked,
   });
@@ -428,19 +575,43 @@ async function fetchRoute(from, to) {
   try {
     res = await fetch(`${API_URL}/route?${params}`);
   } catch {
-    return { data: await fetchMock(), mock: true }; // backend not running
+    throw new Error("Can't reach the routing server. Is it running on port 8000?");
   }
 
   const body = await res.json().catch(() => null);
-  if (res.ok && body) return { data: body, mock: false };
+  if (res.ok && body) return body;
   // Contract 4 errors: {"error": "<code>", "message": "<human text>"}
   throw new Error(body?.message || `Routing failed (HTTP ${res.status}).`);
 }
 
-async function fetchMock() {
-  const res = await fetch(MOCK_URL).catch(() => null);
-  if (res?.ok) return res.json();
-  throw new Error("Backend offline and no mock route found.");
+// Join per-leg responses into one response of the same shape. Lengths and times
+// add up, lit share is length-weighted, and the longest gap is the longest of any
+// leg (gaps aren't merged across stops, since you pause there anyway).
+function joinLegs(legs) {
+  if (legs.length === 1) return legs[0];
+  const join = (name) => {
+    const rs = legs.map((l) => l.routes[name]);
+    const length = rs.reduce((t, r) => t + r.length_m, 0);
+    const seen = new Set();
+    return {
+      coords: rs.flatMap((r, k) => (k ? r.coords.slice(1) : r.coords)),
+      length_m: length,
+      minutes: rs.reduce((t, r) => t + r.minutes, 0),
+      lit_frac: rs.reduce((t, r) => t + r.lit_frac * r.length_m, 0) / length,
+      max_gap_m: Math.max(...rs.map((r) => r.max_gap_m)),
+      dark_gaps: rs.flatMap((r) => r.dark_gaps),
+      lamp_ids: [...new Set(rs.flatMap((r) => r.lamp_ids))],
+      constellation: rs.flatMap((r) => r.constellation).filter((c) => !seen.has(c.id) && seen.add(c.id)),
+    };
+  };
+  return {
+    request: legs[0].request,
+    snapped: { from: legs[0].snapped.from, to: legs.at(-1).snapped.to },
+    alpha_used: Math.min(...legs.map((l) => l.alpha_used)),
+    detour_capped: legs.some((l) => l.detour_capped),
+    same_route: legs.every((l) => l.same_route),
+    routes: { shortest: join("shortest"), lit: join("lit") },
+  };
 }
 
 // ---- Drawing routes -------------------------------------------------------------
@@ -585,16 +756,15 @@ function fitRoutes(data) {
 
 // ---- Route cards ----------------------------------------------------------------
 
-function showStats(data, mock) {
-  if (mock) console.info("Routing server offline; showing mocks/route_response.json.");
-
+function showStats(data) {
   for (const name of ROUTES) {
     const r = data.routes[name];
     const card = document.querySelector(`.route-card[data-route="${name}"]`);
     card.querySelector('[data-stat="minutes"]').textContent = `${Math.round(r.minutes)} min`;
     card.querySelector('[data-stat="tag"]').textContent =
       `${formatDistance(r.length_m)} · ${Math.round(r.lit_frac * 100)}% lit`;
-    card.querySelector('[data-stat="lit-bar"]').style.width = `${r.lit_frac * 100}%`;
+    const via = viaStreet(r.lamp_ids);
+    card.querySelector('[data-stat="via"]').textContent = via ? `via ${via}` : "";
   }
   document.querySelector('.route-card[data-route="shortest"]').hidden = data.same_route;
 
@@ -606,6 +776,16 @@ function showStats(data, mock) {
     : extra > 0 ? `${extra} extra min for a brighter walk.`
     : "Brighter, and no slower.";
   routesEl.hidden = false;
+}
+
+// The street most of the route's lamps are on, like Google's "via Mission St".
+function viaStreet(lampIds) {
+  const counts = new Map();
+  for (const id of lampIds) {
+    const street = lampStreet.get(id);
+    if (street) counts.set(street, (counts.get(street) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
 function formatDistance(m) {
@@ -624,6 +804,10 @@ function lineFC(coords) {
 
 function emptyFC() {
   return { type: "FeatureCollection", features: [] };
+}
+
+function titleCase(text) {
+  return text.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
 function setStatus(text) {
